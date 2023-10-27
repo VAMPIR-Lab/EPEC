@@ -1,18 +1,10 @@
-struct OptimizationProblem{T1<:Integer, T2<:Real}
-    n::T1 # domain dimension
-    #m::T1 # constraint dimension
-    dvars::Vector{T1}
+struct OptimizationProblem
+    n::Int # domain dimension
+    dvars::Vector{Int}
     f::Function
     g::Function
-    l::Vector{T2}
-    u::Vector{T2}
-    #∇ℒ::Function
-    #∇²ℒ_vals::Function
-    #∇²ℒ_rows::Vector{T1}
-    #∇²ℒ_cols::Vector{T1}
-    #∇g_vals::Function
-    #∇g_rows::Vector{T1}
-    #∇g_cols::Vector{T1}
+    l::Vector{Float64}
+    u::Vector{Float64}
 end
 
 #function OptimizationProblem(n, dvars, f, g, l, u)
@@ -46,8 +38,9 @@ function Base.hcat(OPs::OptimizationProblem...)
     n_privates = [length(OP.dvars) for OP in OPs]
     m_privates = [length(OP.l) for OP in OPs] 
     m = sum(m_privates)
+    all_dvars = union((OP.dvars for OP in OPs)...)
+    pvars = setdiff(1:n, all_dvars)
 
-    #x = Symbolics.@variables(x[1:n])[1] |> Symbolics.scalarize
     xs = map(1:N) do i
         sym = Symbol("x", i)
         Symbolics.@variables($sym[1:n_privates[i]])[1] |> Symbolics.scalarize
@@ -60,11 +53,13 @@ function Base.hcat(OPs::OptimizationProblem...)
         sym = Symbol("s", i)
         Symbolics.@variables($sym[1:m_privates[i]])[1] |> Symbolics.scalarize
     end
+    xp = Symbolics.@variables(xp[1:length(pvars)])[1] |> Symbolics.scalarize
 
     x = Vector{Num}(undef, n)
     for (e, OP) in enumerate(OPs)
         x[OP.dvars] = xs[e]
     end
+    x[pvars] = xp
     λ = vcat(λs...)
     s = vcat(ss...)
 
@@ -76,26 +71,26 @@ function Base.hcat(OPs::OptimizationProblem...)
         OP.g(x) - ss[i]
     end
     F = [grad_lags; cons_s; λ]
-    F! = Symbolics.build_function(F, x, s, λ; expression = Val(false))[2]
+    F! = Symbolics.build_function(F, x, λ, s; expression = Val(false))[2]
     FF = (result, z) -> begin
         F!(result, @view(z[1:n]), @view(z[n+1:n+m]), @view(z[n+m+1:end]))
     end
 
-    J = Symbolics.sparsejacobian(F, [x; s; λ])
+    J = Symbolics.sparsejacobian(F, [x; λ; s])
     (rows, cols, vals) = findnz(J)
-    J_vals! = Symbolics.build_function(vals, x, s, λ; expression = Val(false))[2]
+    J_vals! = Symbolics.build_function(vals, x, λ, s; expression = Val(false))[2]
     JV = (result, z) -> begin
         J_vals!(result, @view(z[1:n]), @view(z[n+1:n+m]), @view(z[n+m+1:end]))
     end
 
-    l = fill(-Inf, n+m)
+    l = fill(-Inf, sum(n_privates)+m)
     append!(l, (OP.l for OP in OPs)...)
-    u = fill(Inf, n+m)
+    u = fill(Inf, sum(n_privates)+m)
     append!(u, (OP.u for OP in OPs)...)
 
-    dvars = collect(1:length(l))
+    mcp_vars = setdiff(1:n+2m, pvars)
     
-    MixedComplementarityProblem(n, FF, JV, rows, cols, l, u, dvars)
+    MixedComplementarityProblem(n+2m, FF, JV, rows, cols, l, u, mcp_vars, pvars)
 end
 
 
@@ -108,14 +103,22 @@ struct MixedComplementarityProblem
     l::Vector{Cdouble}
     u::Vector{Cdouble}
     dvars::Vector{Cint}
+    pvars::Vector{Cint}
 end
 
-function solve(mcp::MixedComplementarityProblem, z=Vector{Cdouble}; silent=false)
-    @assert length(z) == length(mcp.dvars)
-    pvars = setdiff(1:mcp.n, mcp.dvars) |> sort
+function solve(mcp::MixedComplementarityProblem, z0=Vector{Cdouble}; silent=false)
+    @assert length(z0) == mcp.n
 
+    function z_full(z_partial)
+        zf = zeros(eltype(z_partial),mcp.n)
+        zf[mcp.dvars] .= z_partial
+        zf[mcp.pvars] .= z0[mcp.pvars]
+        zf
+    end
+    
     function F(n, z, result)
-        mcp.F(result, z)
+        zf = z_full(z)
+        mcp.F(result, zf)
         Cint(0)
     end
 
@@ -131,9 +134,9 @@ function solve(mcp::MixedComplementarityProblem, z=Vector{Cdouble}; silent=false
     # PATH needs to reason about jacobian of F w.r.t. decision variables only.
     # The following code splits J into the portions w.r.t. dvars and pvars, for
     # use in the function below.
-    J_full = sparse(mcp.J_rows, mcp.J_cols, Vector{Cdouble}(undef, length(mcp.J_rows)), length(mcp.dvars), length(mcp.dvars))
-    J_dvars = J_full[:, d_mask]
-    J_pvars = J_full[:, p_mask]
+    J_full = sparse(mcp.J_rows, mcp.J_cols, Vector{Cdouble}(undef, length(mcp.J_rows)), length(mcp.dvars), mcp.n)
+    J_dvars = J_full[:, mcp.dvars]
+    J_pvars = J_full[:, mcp.pvars]
     val_buffer = zeros(Cdouble, nnz_d+nnz_p)
     J_col = J_dvars.colptr[1:end-1]
     J_len = diff(J_dvars.colptr)
@@ -141,7 +144,8 @@ function solve(mcp::MixedComplementarityProblem, z=Vector{Cdouble}; silent=false
 
     function J(n, nnz, z, col, len, row, data)
         val_buffer .= 0.0
-        mcp.J_vals(val_buffer, z)
+        zf = z_full(z)
+        mcp.J_vals(val_buffer, zf)
         data .= val_buffer[d_mask]
         col .= J_col
         len .= J_len
@@ -149,16 +153,17 @@ function solve(mcp::MixedComplementarityProblem, z=Vector{Cdouble}; silent=false
         Cint(0)
     end
 
-    status, z, info = PATHSolver.solve_mcp(
+    status, z_out, info = PATHSolver.solve_mcp(
          F,
          J,
          mcp.l,
          mcp.u,
-         z;
+         z0[mcp.dvars];
          silent,
          nnz = nnz_d,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
      ) 
-    (; status, z, info)
+    
+    (; status, z=z_full(z_out), info)
 end

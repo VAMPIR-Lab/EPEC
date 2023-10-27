@@ -8,6 +8,7 @@ using Symbolics
 using Infiltrator
 
 include("problems.jl")
+include("../examples/stackelnash_racing.jl")
 
 export OptimizationProblem
 
