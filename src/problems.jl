@@ -93,7 +93,6 @@ function Base.hcat(OPs::OptimizationProblem...)
     MixedComplementarityProblem(n+2m, FF, JV, rows, cols, l, u, mcp_vars, pvars)
 end
 
-
 struct MixedComplementarityProblem
     n::Cint
     F::Function
@@ -167,3 +166,58 @@ function solve(mcp::MixedComplementarityProblem, z0=Vector{Cdouble}; silent=fals
     
     (; status, z=z_full(z_out), info)
 end
+
+function get_local_solution_graph(mcp, z; tol=1e-5)
+    f = zeros(mcp.dvars |> length)
+    mcp.F(f, z)
+    l = mcp.l  
+    u = mcp.u
+    z_dvars = @view z[mcp.dvars]
+    z_pvars = @view z[mcp.pvars]
+    n = length(z_dvars)
+    J = Dict{Int, Vector{Int}}()
+    for i in 1:n
+        Ji = Int[]
+        if f[i] ≥ tol && z_dvars[i] < l[i]+tol
+            push!(Ji, 1)
+        elseif -tol < f[i] < tol && z_dvars[i] < l[i]+tol
+            push!(Ji, 1)
+            push!(Ji, 2)
+        elseif -tol < f[i] < tol && l[i]+tol ≤ z_dvars[i] ≤ u[i]-tol
+            push!(Ji, 2)
+        elseif -tol < f[i] < tol && z_dvars > u[i]-tol
+            push!(Ji, 2)
+            push!(Ji, 3)
+        elseif f[i] ≤ -tol && z_dvars > u[i]-tol
+            push!(Ji, 3)
+        elseif isapprox(l[i], u[i]; atol=tol)
+            push!(Ji, 4)
+        end
+        J[i] = Ji
+    end
+    valid_solution = !any(isempty.(Ji for Ji in values(J)))
+    !valid_solution && error("Not a valid solution!")
+    
+    recipes = get_all_recipes(J)
+
+end
+
+function get_all_recipes(J)
+    Ks = Vector{Dict{Int, Set{Int}}}()
+    N = length(J)
+    multiples = [i for i in 1:N if length(J[i]) > 1]
+    singles = setdiff(1:N, multiples)
+    It = Iterators.product([J[i] for i in multiples]...)
+    for assignment in It
+        K = Dict(j=>Set{Int}() for j in 1:4)
+        for (e,ej) in enumerate(assignment)
+            push!(K[ej], e)
+        end
+        for e in singles
+            push!(K[J[e]], e)
+        end
+        push!(Ks, K)
+    end
+    Ks
+end
+     
