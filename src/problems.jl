@@ -93,6 +93,15 @@ function Base.hcat(OPs::OptimizationProblem...)
     MixedComplementarityProblem(n+2m, FF, JV, rows, cols, l, u, mcp_vars, pvars)
 end
 
+function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...)
+    @assert length(blocks_per_row) == 2
+    N1, N2 = blocks_per_row
+    
+    low_level = hcat(OPs[N1+1:end]...)
+    num_ll_cons = 2*length(low_level.l)
+    
+end
+
 struct MixedComplementarityProblem
     n::Cint
     F::Function
@@ -220,4 +229,38 @@ function get_all_recipes(J)
     end
     Ks
 end
-     
+
+function convert_mcp_recipe(mcp, recipe)
+    n = length(mcp.l)
+
+    lf = zeros(n)
+    uf = zeros(n)
+    lz = zeros(n)
+    uz = zeros(n)
+
+    for i in K[1]
+        lf[i] = 0.0
+        uf[i] = Inf
+        lz[i] = mcp.l[i]
+        uz[i] = mcp.l[i]
+    end
+    for i in K[2]
+        lf[i] = 0.0
+        uf[i] = 0.0
+        lz[i] = mcp.l[i]
+        uz[i] = mcp.u[i]
+    end
+    for i in K[3]
+        lf[i] = -Inf
+        uf[i] = 0.0
+        lz[i] = mcp.u[i]
+        uz[i] = mcp.u[i]
+    end
+    for i in K[4]
+        lf[i] = -Inf
+        uf[i] = Inf
+        lz[i] = mcp.l[i]
+        uz[i] = mcp.u[i]
+    end
+    (; lf, uf, lz, uz, mcp)
+end
