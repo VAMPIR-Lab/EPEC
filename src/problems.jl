@@ -95,11 +95,45 @@ end
 
 function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...)
     @assert length(blocks_per_row) == 2
+    @assert allequal(OP.n for OP in OPs)
     N1, N2 = blocks_per_row
+    N = N1 + N2
+    @assert N1+N2 == length(OPs)
     
-    low_level = hcat(OPs[N1+1:end]...)
-    num_ll_cons = 2*length(low_level.l)
+    n = first(OPs).n
+
+    top_OPs = OPs[1:N1]
+    bot_OPs = OPs[N1+1:end]
     
+    n_privates = [length(OP.dvars) for OP in OPs]
+    m_privates = [length(OP.l) for OP in OPs]
+    
+    dim_z_low = sum(n_privates[i]+2m_privates[i] for i in N1+1:N1+N2; init=0)
+    dim_z_cons = 2*dim_z_low
+    dim_total = sum(n_privates[i]+2m_privates[i]+2*dim_z_cons+2*dim_z_low for i in 1:N1; init=0)
+    # Each top-level player: privates + duals on private cons + slacks on
+    # private cons + slacks on z cons + duals on z cons + duals on z agreement
+    # + copy of z
+
+    θ = Symbolics.@variables($sym[1:dim_total])[1] |> Symbolics.scalarize
+    # θ := [x₁ ... xₙ₁ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
+    
+    ind = 0
+    vars = Dict()
+
+    for (key_base, len_itr) in zip(["x", "z", "λ", "s", "ψ", "r", "γ"], 
+                                   [n_privates, dim_z_low, m_privates, m_privates, dim_z_cons, dim_z_cons, dim_z_low])
+        lens = length(len_itr) == 1 ? fill(len_itr, N1) : len_itr
+        for i in 1:N1
+            key = string(key_base, i)
+            len = lens[i]
+            vars[key] = θ[ind+1:ind+len]
+            ind+=len
+        end
+    end
+
+    # todo 
+
 end
 
 struct MixedComplementarityProblem
