@@ -109,8 +109,7 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
     m_privates = [length(OP.l) for OP in OPs]
     
     dim_z_low = sum(n_privates[i]+2m_privates[i] for i in N1+1:N1+N2; init=0)
-    dim_z_cons = 2*dim_z_low
-    dim_total = sum(n_privates[i]+2m_privates[i]+2*dim_z_cons+2*dim_z_low for i in 1:N1; init=0)
+    dim_total = sum(n_privates[i]+2m_privates[i]+4*dim_z_low for i in 1:N1; init=0)
     # Each top-level player: privates + duals on private cons + slacks on
     # private cons + slacks on z cons + duals on z cons + duals on z agreement
     # + copy of z
@@ -120,21 +119,110 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
     
     ind = 0
     vars = Dict()
+    inds = Dict()
 
     for (key_base, len_itr) in zip(["x", "z", "λ", "s", "ψ", "r", "γ"], 
-                                   [n_privates, dim_z_low, m_privates, m_privates, dim_z_cons, dim_z_cons, dim_z_low])
+                                   [n_privates, dim_z_low, m_privates, m_privates, dim_z_low, dim_z_low, dim_z_low])
         lens = length(len_itr) == 1 ? fill(len_itr, N1) : len_itr
         for i in 1:N1
-            key = string(key_base, i)
             len = lens[i]
-            vars[key] = θ[ind+1:ind+len]
+            vars[key_base, i] = θ[ind+1:ind+len]
+            inds[key_base, i] = ind+1:ind+len
             ind+=len
         end
     end
 
-    # todo 
+    z = vars["z", 1] # any player's copy of z would do (i.e. z2, z3, ..., or zₙ)
+    ind = 0
+    for (key_base, len_itr) in zip(["x", "λ", "s"], [n_privates, m_privates, m_privates])
+        for i in N1+1:N1+N2
+            len = len_itr[i]
+            vars[key_base, i] = z[ind+1:ind+len]
+            ind += len
+        end
+    end
 
+    x = vcat((vars["x",i] for i in 1:N1+N2)...)
+
+    # construct F for low-level MCP
+    grad_lags = mapreduce(vcat, N1+1:N1+N2) do i
+        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x)
+        grad_lag = Symbolics.gradient(Lag, vars["x", i])
+    end 
+    cons_s = mapreduce(vcat, N1+1:N1+N2) do i
+        OPs[i].g(x) - vars["s", i]
+    end
+    λs = vcat((vars["λ",i] for i in N1+1:N1+N2)...)
+
+    F = [grad_lags; cons_s; λs]
+
+    F! = Symbolics.build_function(F, θ; expression = Val(false))[2]
+    J = Symbolics.sparsejacobian(F, z) 
+    (J_rows, J_cols, J_vals) = findnz(J)
+    J_vals! = Symbolics.build_function(J_vals, θ; expression = Val(false))[2]
+
+    l = fill(-Inf, length(grad_lags)+length(cons_s))
+    u = fill(+Inf, length(grad_lags)+length(cons_s))
+    for i in N1+1:N1+N2
+        append!(l, OPs[i].l)
+        append!(u, OPs[i].u)
+    end
+
+    low_level = (; F!, J_rows, J_cols, J_vals!, z_inds=inds["z", 1], l, u)
+    
+    # reminder :  θ := [x₁ ... xₙ₁ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
+
+    grad_lags_x = mapreduce(vcat, 1:N1) do i
+        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x) - vars["ψ", i]'*F
+        grad_lag = Symbolics.gradient(Lag, vars["x", i])
+    end
+    grad_lags_z = mapreduce(vcat, 1:N1) do i
+        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x) - vars["ψ", i]'*F - vars["γ", i]
+        grad_lag = Symbolics.gradient(Lag, vars["z", i])
+    end
+    cons_s_top = mapreduce(vcat, 1:N1) do i
+        OPs[i].g(x) - vars["s", i]
+    end
+    λs_top = vcat((vars["λ",i] for i in 1:N1)...)
+    cons_r = mapreduce(vcat, 1:N1) do i
+        F - vars["r", i]
+    end
+    ψs = vcat((vars["ψ",i] for i in 1:N1)...)
+    cons_z = mapreduce(vcat, 1:(N1-1)) do i
+        -vars["z",i+1] + vars["z", i]
+    end
+    append!(cons_z, -vars["z",1] + vars["z", N1])
+
+    Ftotal = [grad_lags_x; grad_lags_z; cons_s_top; λs_top; cons_r; ψs; cons_z]
+    ltotal = [fill(-Inf, length(grad_lags_x));
+              fill(-Inf, length(grad_lags_z)); # will get overwritten by templates
+              fill(-Inf, length(cons_s_top));
+              vcat((OPs[i].l for i in 1:N1)...);
+              fill(-Inf, length(cons_r));
+              fill(-Inf, length(ψs)); # will get overwritten by templates
+              fill(-Inf, length(cons_z))]
+    utotal = [fill(+Inf, length(grad_lags_x));
+              fill(+Inf, length(grad_lags_z)); # will get overwritten by templates
+              fill(+Inf, length(cons_s_top));
+              vcat((OPs[i].u for i in 1:N1)...);
+              fill(+Inf, length(cons_r));
+              fill(+Inf, length(ψs)); # will get overwritten by templates
+              fill(+Inf, length(cons_z))]
+
+    # these are needed for assigning bounds from low-level solutions
+    z_inds_top = length(grad_lags_x) .+ (1:length(grad_lags_z))
+    r_inds_top = length(grad_lags_x)+length(grad_lags_z)+length(cons_s_top)+length(λs_top)+length(cons_r) .+ 1:length(ψs)
+
+    Ftotal! = Symbolics.build_function(Ftotal, θ; expression = Val(false))[2]
+    Jtotal = Symbolics.sparsejacobian(Ftotal, θ) 
+    (Jtotal_rows, Jtotal_cols, Jtotal_vals) = findnz(Jtotal)
+    Jtotal_vals! = Symbolics.build_function(Jtotal_vals, θ; expression = Val(false))[2]
+
+    top_level = (; Ftotal!, Jtotal_rows, Jtotal_cols, Jtotal_vals!, z_inds_top, r_inds_top, ltotal, utotal)
+
+    (; low_level, top_level)
 end
+
 
 struct MixedComplementarityProblem
     n::Cint
