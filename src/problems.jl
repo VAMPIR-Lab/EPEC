@@ -7,7 +7,7 @@ struct OptimizationProblem
     u::Vector{Float64}
 end
 
-function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...)
+function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...; use_z_slacks=false)
     @assert length(blocks_per_row) == 2
     @assert allequal(OP.n for OP in OPs)
     N1, N2 = blocks_per_row
@@ -28,8 +28,8 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
     # private cons + slacks on z cons + duals on z cons + duals on z agreement
     # + copy of z
 
-    θ = Symbolics.@variables($sym[1:dim_total])[1] |> Symbolics.scalarize
-    # θ := [x₁ ... xₙ₁ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
+    θ = Symbolics.@variables(θ[1:dim_total])[1] |> Symbolics.scalarize
+    # θ := [x₁ ... xₙ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
     
     ind = 0
     vars = Dict()
@@ -52,11 +52,13 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
         for i in N1+1:N1+N2
             len = len_itr[i]
             vars[key_base, i] = z[ind+1:ind+len]
+            inds[key_base, i] = inds["z", 1][ind+1:ind+len]
             ind += len
         end
     end
 
     x = vcat((vars["x",i] for i in 1:N1+N2)...)
+    x_inds = vcat((inds["x",i] for i in 1:N1+N2)...)
 
     # construct F for low-level MCP
     grad_lags = mapreduce(vcat, N1+1:N1+N2) do i
@@ -82,7 +84,7 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
         append!(u, OPs[i].u)
     end
 
-    low_level = (; F!, J_rows, J_cols, J_vals!, z_inds=inds["z", 1], l, u)
+    low_level = (; F!, J_rows, J_cols, J_vals!, z_inds=inds["z", 1], l, u, n = length(l))
     
     # reminder :  θ := [x₁ ... xₙ₁ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
 
@@ -91,8 +93,11 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
     end
     grad_lags_z = mapreduce(vcat, 1:N1) do i
-        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x) - vars["ψ", i]'*F - vars["γ", i]
-        grad_lag = Symbolics.gradient(Lag, vars["z", i])
+        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x) - vars["ψ", i]'*F #- vars["γ", i]'*vars["z", 1]
+        if use_z_slacks
+            Lag -= vars["γ", i]'*vars["z", 1]
+        end
+        grad_lag = Symbolics.gradient(Lag, vars["z", 1])
     end
     cons_s_top = mapreduce(vcat, 1:N1) do i
         OPs[i].g(x) - vars["s", i]
@@ -105,7 +110,8 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
     cons_z = mapreduce(vcat, 1:(N1-1)) do i
         -vars["z",i+1] + vars["z", i]
     end
-    append!(cons_z, -vars["z",1] + vars["z", N1])
+    append!(cons_z, sum(vars["γ", i] for i in 1:N1))
+    #append!(cons_z, -vars["z",1] + vars["z", N1])
 
     Ftotal = [grad_lags_x; grad_lags_z; cons_s_top; λs_top; cons_r; ψs; cons_z]
     ltotal = [fill(-Inf, length(grad_lags_x));
@@ -127,16 +133,16 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
     ind = 0
     base = length(grad_lags_x)
     z_inds_top = map(1:N1) do i
-        inds = base .+ (ind+1):(ind+dim_z_low)
+        local_inds = ((ind+1):(ind+dim_z_low)) .+ base
         ind += dim_z_low
-        inds
+        local_inds
     end
     ind = 0
     base = length(grad_lags_x)+length(grad_lags_z)+length(cons_s_top)+length(λs_top)+length(cons_r) 
     r_inds_top = map(1:N1) do i
-        inds = base .+ (ind+1):(ind:dim_z_low)
+        local_inds = ((ind+1):(ind+dim_z_low)) .+ base
         ind += dim_z_low
-        inds
+        local_inds
     end
 
     Ftotal! = Symbolics.build_function(Ftotal, θ; expression = Val(false))[2]
@@ -151,9 +157,12 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
                    z_inds = z_inds_top, 
                    r_inds = r_inds_top, 
                    l = ltotal, 
-                   u = utotal)
+                   u = utotal,
+                   n = length(ltotal))
 
-    (; low_level, top_level)
+
+
+    (; low_level, top_level, x_inds, inds)
 end
 
 function solve(epec, θ; tol=1e-6)
@@ -163,12 +172,12 @@ function solve(epec, θ; tol=1e-6)
     converged = false
     while !converged
         (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
-        solution_graph = get_solution_graph(low_level, θ)
+        solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
             (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
-            if (norm(dθ) < tol)
+            if (norm(dθ) > tol)
                 converged = false
                 θ += dθ
                 break
@@ -187,6 +196,7 @@ function solve_top_level(mcp, bounds, θ; silent=false)
     J_row = J_shape.rowval
     function F(n, θ, result)
         mcp.F!(result, θ)
+        Cint(0)
     end
     function J(n, nnz, θ, col, len, row, data)
         mcp.J_vals!(data, θ)
@@ -208,6 +218,7 @@ function solve_top_level(mcp, bounds, θ; silent=false)
         u[ind_set] .= bounds.uf
     end
 
+
     status, θ_out, info = PATHSolver.solve_mcp(
          F,
          J,
@@ -219,7 +230,7 @@ function solve_top_level(mcp, bounds, θ; silent=false)
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
      ) 
-
+    
     dθ = θ_out - θ
     (; dθ, status, info)
 end
@@ -310,7 +321,7 @@ function get_all_recipes(J)
             push!(K[ej], e)
         end
         for e in singles
-            push!(K[J[e]], e)
+            push!(K[J[e][1]], e)
         end
         push!(Ks, K)
     end
@@ -318,6 +329,7 @@ function get_all_recipes(J)
 end
 
 function convert_recipe(mcp, recipe)
+    K = recipe
     n = length(mcp.l)
 
     lf = zeros(n)
