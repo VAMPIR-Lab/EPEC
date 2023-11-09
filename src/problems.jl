@@ -18,6 +18,10 @@ function Base.vcat(OPs::OptimizationProblem...)
     length(OPs) == 3 && error("L-level optimization problems are not supported for L > 2")
 end
 
+function Base.hcat(OPs::OptimizationProblem...)
+    create_epec((length(OPs), 0), OPs...; use_z_slacks=false)
+end
+
 function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...; use_z_slacks=false)
     @assert length(players_per_row) == 2
     @assert allequal(OP.n for OP in OPs)
@@ -174,6 +178,10 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
 
 
     (; low_level, top_level, x_inds, inds)
+end
+
+function solve(epec; tol=1e-6)
+    solve(epec, zeros(epec.top_level.n); tol)
 end
 
 function solve(epec, θ; tol=1e-6)
