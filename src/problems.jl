@@ -7,10 +7,21 @@ struct OptimizationProblem
     u::Vector{Float64}
 end
 
-function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...; use_z_slacks=false)
-    @assert length(blocks_per_row) == 2
+function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...)
+    create_epec(blocks_per_row, OPs...; use_z_slacks=false)
+end
+
+function Base.vcat(OPs::OptimizationProblem...)
+    length(OPs) == 0 && error("Can't create equilibrium problem from no optimization problems")
+    length(OPs) == 1 && return create_epec((1,0), OPs...; use_z_slacks=false)
+    length(OPs) == 2 && return create_epec((1,1), OPs...; use_z_slacks=false)
+    length(OPs) == 3 && error("L-level optimization problems are not supported for L > 2")
+end
+
+function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...; use_z_slacks=false)
+    @assert length(players_per_row) == 2
     @assert allequal(OP.n for OP in OPs)
-    N1, N2 = blocks_per_row
+    N1, N2 = players_per_row
     N = N1 + N2
     @assert N1+N2 == length(OPs)
     
@@ -61,16 +72,16 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
     x_inds = vcat((inds["x",i] for i in 1:N1+N2)...)
 
     # construct F for low-level MCP
-    grad_lags = mapreduce(vcat, N1+1:N1+N2) do i
+    grad_lags = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
         Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x)
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
     end 
-    cons_s = mapreduce(vcat, N1+1:N1+N2) do i
+    cons_s = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
         OPs[i].g(x) - vars["s", i]
     end
     λs = vcat((vars["λ",i] for i in N1+1:N1+N2)...)
 
-    F = [grad_lags; cons_s; λs]
+    F = Num[grad_lags; cons_s; λs]
 
     F! = Symbolics.build_function(F, θ; expression = Val(false))[2]
     J = Symbolics.sparsejacobian(F, z) 
@@ -107,7 +118,7 @@ function Base.hvcat(blocks_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem
         F - vars["r", i]
     end
     ψs = vcat((vars["ψ",i] for i in 1:N1)...)
-    cons_z = mapreduce(vcat, 1:(N1-1)) do i
+    cons_z = mapreduce(vcat, 1:(N1-1); init=Num[]) do i
         -vars["z",i+1] + vars["z", i]
     end
     append!(cons_z, sum(vars["γ", i] for i in 1:N1))
@@ -239,6 +250,7 @@ end
 
 function solve_low_level!(mcp, θ; silent=false)
     n = length(mcp.l)
+    n == 0 && return (; status=:success, info="problem of zero dimension")
     θF = copy(θ)
     nnz = length(mcp.J_rows)
     J_shape = sparse(mcp.J_rows, mcp.J_cols, Vector{Cdouble}(undef, nnz), n, n)
