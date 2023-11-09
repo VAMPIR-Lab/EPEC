@@ -36,24 +36,5 @@ function setup()
     OP2 = OptimizationProblem(8, [3,4], f2, g2, [-1.0,], [1.0,])
 
     MCP = [OP1 OP2]
-
-    p1 = [-0.5, 0.0]
-    p2 = [0.0, 0.1]
-    d1 = [2.0, -0.2]
-    d2 = [1.0, 0]
-    z0 = zeros(MCP.n)
-    z0[MCP.pvars] = [p1; p2]
-    z0[1:4] = [d1; d2]
-    ret = solve(MCP, z0; silent=false)
-
-    X1 = ret.z[1:2]+ret.z[5:6]
-    X2 = ret.z[3:4]+ret.z[7:8]
-
-    λ1 = ret.z[9:10]
-    λ2 = ret.z[11]
-    s1 = ret.z[12:13]
-    s2 = ret.z[14]
-
-    (; ret.z, MCP, X1, X2, λ1, λ2, s1, s2)
 end
 
