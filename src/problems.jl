@@ -206,7 +206,7 @@ function solve(epec, θ; tol=1e-6)
     return θ
 end
 
-function solve_top_level(mcp, bounds, θ; silent=false)
+function solve_top_level(mcp, bounds, θ; silent=true)
     n = length(mcp.l)
     nnz = length(mcp.J_rows)
     J_shape = sparse(mcp.J_rows, mcp.J_cols, Vector{Cdouble}(undef, nnz), n, n)
@@ -238,6 +238,7 @@ function solve_top_level(mcp, bounds, θ; silent=false)
     end
 
 
+    PATHSolver.c_api_License_SetString("2830898829&Courtesy&&&USR&45321&5_1_2021&1000&PATH&GEN&31_12_2025&0_0_0&6000&0_0")
     status, θ_out, info = PATHSolver.solve_mcp(
          F,
          J,
@@ -256,7 +257,7 @@ end
      
 
 
-function solve_low_level!(mcp, θ; silent=false)
+function solve_low_level!(mcp, θ; silent=true)
     n = length(mcp.l)
     n == 0 && return (; status=:success, info="problem of zero dimension")
     θF = copy(θ)
@@ -281,6 +282,7 @@ function solve_low_level!(mcp, θ; silent=false)
         Cint(0)
     end
     
+    PATHSolver.c_api_License_SetString("2830898829&Courtesy&&&USR&45321&5_1_2021&1000&PATH&GEN&31_12_2025&0_0_0&6000&0_0")
     status, z_out, info = PATHSolver.solve_mcp(
          F,
          J,
@@ -292,6 +294,12 @@ function solve_low_level!(mcp, θ; silent=false)
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
      ) 
+
+    if status != 1 && silent
+        return solve_low_level!(mcp, θ; silent=false)
+    end
+
+    @infiltrate status != 1
 
     θ[mcp.z_inds] .= z_out 
     (; status, info)
@@ -317,7 +325,7 @@ function get_local_solution_graph(mcp, θ; tol=1e-5)
         elseif -tol < f[i] < tol && z > u[i]-tol
             push!(Ji, 2)
             push!(Ji, 3)
-        elseif f[i] ≤ -tol && z > u[i]-tol
+        elseif f[i] ≤ -tol && z[i] > u[i]-tol
             push!(Ji, 3)
         elseif isapprox(l[i], u[i]; atol=tol)
             push!(Ji, 4)
@@ -325,7 +333,7 @@ function get_local_solution_graph(mcp, θ; tol=1e-5)
         J[i] = Ji
     end
     valid_solution = !any(isempty.(Ji for Ji in values(J)))
-    !valid_solution && error("Not a valid solution!") 
+    !valid_solution && begin @infiltrate;  error("Not a valid solution!") end
     recipes = get_all_recipes(J)
 end
 
