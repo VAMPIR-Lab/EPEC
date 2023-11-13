@@ -13,9 +13,10 @@ function f1(Z; α1 = 1.0, α2 = 0.0)
     
     cost = 0.0
     for t in 1:T
-        @inbounds xt = @view(Xa[(t-1)*4+1:t*4])
+        @inbounds xat = @view(Xa[(t-1)*4+1:t*4])
+        @inbounds xbt = @view(Xb[(t-1)*4+1:t*4])
         @inbounds ut = @view(Ua[(t-1)*2+1:t*2]) 
-        cost += -xt[2] + α1*xt[1]^2 + α2 * ut'*ut
+        cost += xbt[2]-xat[2] + α1*xat[1]^2 + α2 * ut'*ut
     end
     cost
 end
@@ -30,9 +31,10 @@ function f2(Z; α1 = 1.0, α2 = 0.0)
     
     cost = 0.0
     for t in 1:T
-        @inbounds xt = @view(Xb[(t-1)*4+1:t*4])
+        @inbounds xat = @view(Xa[(t-1)*4+1:t*4])
+        @inbounds xbt = @view(Xb[(t-1)*4+1:t*4])
         @inbounds ut = @view(Ub[(t-1)*2+1:t*2]) 
-        cost += -xt[2] + α1*xt[1]^2 + α2 * ut'*ut
+        cost += xat[2]-xbt[2] + α1*xbt[1]^2 + α2 * ut'*ut
     end
     cost
 end
@@ -63,7 +65,7 @@ function col(Xa, Xb, r)
         @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
         @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
         delta = xa[1:2]-xb[1:2] 
-        delta'*delta - r^2
+        [delta'*delta - r^2,]
     end
 end
 
@@ -72,7 +74,7 @@ function responsibility(Xa, Xb)
     mapreduce(vcat, 1:T) do t
         @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
         @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
-        h = xb[2] - xa[2] # h is positive when xa is behind xb in second coordinate
+        h = [xb[2] - xa[2],] # h is positive when xa is behind xb in second coordinate
     end
 end
 
@@ -97,9 +99,10 @@ function g1(Z, x0; Δt = 0.1, r = 1.0)
 
     g_dyn = dyn(Xa, Ua, x0a, Δt)
     g_col = col(Xa, Xb, r)
-    h_col = responsibility(Xa, Xb)   
-
-    [g_dyn; g_col - l.(h_col); Ua; Xa]
+    #h_col = responsibility(Xa, Xb)   
+    h_col = -ones(length(g_col))
+    #[g_dyn; g_col - l.(h_col); Ua; Xa]
+    [g_dyn; Ua; Xa]
 end
 
 function g2(Z, x0; Δt = 0.1, r = 1.0)
@@ -113,9 +116,12 @@ function g2(Z, x0; Δt = 0.1, r = 1.0)
 
     g_dyn = dyn(Xb, Ub, x0b, Δt)
     g_col = col(Xa, Xb, r)
-    h_col = -responsibility(Xa, Xb)   
+    #h_col = -responsibility(Xa, Xb)   
+    h_col = ones(length(g_col))
 
-    [g_dyn; g_col - l.(h_col); Ub; Xb]
+    #[g_dyn; g_col - l.(h_col); Ub; Xb]
+    [g_dyn; g_col; Ub; Xb]
+    #[g_dyn; Ub; Xb]
 end
 
 
@@ -129,8 +135,13 @@ function setup(x0; T=10,
                    v_max_1 = 3.0, 
                    v_max_2 = 3.0, 
                    lat_max = 0.75)
-    lb1 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
-    ub1 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
+    #lb1 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
+    #ub1 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
+    #lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
+    #ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
+    
+    lb1 = [fill(0.0, 4*T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
+    ub1 = [fill(0.0, 4*T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
     lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
     ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
 
@@ -143,7 +154,8 @@ function setup(x0; T=10,
     OP2 = OptimizationProblem(12*T, 1:6*T, f2_pinned, g2_pinned, lb2, ub2)
 
     gnep = [OP1 OP2]
-    bilevel = [OP1; OP2]
+    #bilevel = [OP1; OP2]
+    bilevel = EPEC.create_epec((1,1), OP1, OP2; use_z_slacks=true)
 
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
@@ -161,7 +173,18 @@ function setup(x0; T=10,
         @inbounds Ub = @view(Z[10*T+1:12*T])
         (; Xa, Ua, Xb, Ub)
     end
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2)
+end
 
-
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel)
+function solve_seq(probs)
+    @info "Solving GNEP initialization"
+    θg = solve(probs.gnep, randn(probs.gnep.top_level.n))
+    @info "GNEP initialization solved!"
+    θb = zeros(probs.bilevel.top_level.n)
+    θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
+    θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
+    θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
+    θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
+    θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
+    solve(probs.bilevel, θb)
 end

@@ -175,8 +175,6 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
                    u = utotal,
                    n = length(ltotal))
 
-
-
     (; low_level, top_level, x_inds, inds)
 end
 
@@ -190,17 +188,28 @@ function solve(epec, θ; tol=1e-6)
 
     converged = false
     while !converged
+        @info "Solving low-level"
         (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
+        errored = false
+        @info "Solution graph has $(length(solution_graph)) pieces."
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
-            (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
-            if (norm(dθ) > tol)
-                converged = false
-                θ += dθ
-                break
+            try
+                @info "Solving top level."
+                (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
+                if (norm(dθ) > tol)
+                    converged = false
+                    θ += dθ
+                    break
+                end
+            catch e
+                errored = true
             end
+        end
+        if errored
+            error("One or more of the subpieces resulted in no solution.")
         end
     end
     return θ
@@ -249,13 +258,46 @@ function solve_top_level(mcp, bounds, θ; silent=true)
          nnz,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
+         #convergence_tolerance=1e-8,
      ) 
     
+    if status != PATHSolver.MCP_Solved && silent
+        return solve_top_level(mcp, bounds, θ; silent=false)
+    end
+
+    if status != PATHSolver.MCP_Solved
+        error("Solver failure")
+    end
+
     dθ = θ_out - θ
     (; dθ, status, info)
 end
-     
 
+function check_mcp_sol(f, z, l, u; tol=1e-4)
+    n = length(f)
+    sol = true
+    for i in 1:n
+        if isapprox(l[i], u[i]; atol=tol)
+            continue
+        elseif f[i] ≥ tol && z[i] < l[i]+tol
+            continue
+        elseif -tol < f[i] < tol && z[i] < l[i]+tol
+            continue
+        elseif -tol < f[i] < tol && l[i]+tol ≤ z[i] ≤ u[i]-tol
+            continue
+        elseif -tol < f[i] < tol && z[i] > u[i]-tol
+            continue
+        elseif f[i] ≤ -tol && z[i] > u[i]-tol
+            continue
+        else
+            @infiltrate
+            sol = false
+            break
+        end
+    end
+    return sol
+end
+     
 
 function solve_low_level!(mcp, θ; silent=true)
     n = length(mcp.l)
@@ -281,6 +323,13 @@ function solve_low_level!(mcp, θ; silent=true)
         row .= J_row
         Cint(0)
     end
+    f = zero(z)
+    F(n, z, f)
+    already_solved = check_mcp_sol(f, z, mcp.l, mcp.u)
+    if already_solved
+        display("Low-level already solved!")
+        return (; status=:success, info="problem solved at initialization")
+    end
     
     PATHSolver.c_api_License_SetString("2830898829&Courtesy&&&USR&45321&5_1_2021&1000&PATH&GEN&31_12_2025&0_0_0&6000&0_0")
     status, z_out, info = PATHSolver.solve_mcp(
@@ -293,15 +342,18 @@ function solve_low_level!(mcp, θ; silent=true)
          nnz,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
+         cumulative_iteration_limit = 50_000,
+         convergence_tolerance=1e-8,
      ) 
 
-    if status != 1 && silent
+    if status != PATHSolver.MCP_Solved && silent
         return solve_low_level!(mcp, θ; silent=false)
     end
 
-    @infiltrate status != 1
+    @infiltrate status != PATHSolver.MCP_Solved
 
     θ[mcp.z_inds] .= z_out 
+
     (; status, info)
 end
 
@@ -315,20 +367,20 @@ function get_local_solution_graph(mcp, θ; tol=1e-5)
     J = Dict{Int, Vector{Int}}()
     for i in 1:n
         Ji = Int[]
-        if f[i] ≥ tol && z[i] < l[i]+tol
+        if isapprox(l[i], u[i]; atol=2*tol)
+            push!(Ji, 4)
+        elseif f[i] ≥ tol && z[i] < l[i]+tol
             push!(Ji, 1)
         elseif -tol < f[i] < tol && z[i] < l[i]+tol
             push!(Ji, 1)
             push!(Ji, 2)
         elseif -tol < f[i] < tol && l[i]+tol ≤ z[i] ≤ u[i]-tol
             push!(Ji, 2)
-        elseif -tol < f[i] < tol && z > u[i]-tol
+        elseif -tol < f[i] < tol && z[i] > u[i]-tol
             push!(Ji, 2)
             push!(Ji, 3)
         elseif f[i] ≤ -tol && z[i] > u[i]-tol
             push!(Ji, 3)
-        elseif isapprox(l[i], u[i]; atol=tol)
-            push!(Ji, 4)
         end
         J[i] = Ji
     end
@@ -346,7 +398,7 @@ function get_all_recipes(J)
     for assignment in It
         K = Dict(j=>Set{Int}() for j in 1:4)
         for (e,ej) in enumerate(assignment)
-            push!(K[ej], e)
+            push!(K[ej], multiples[e])
         end
         for e in singles
             push!(K[J[e][1]], e)
