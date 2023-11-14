@@ -4,6 +4,7 @@ using LinearAlgebra
 using PATHSolver
 using SparseArrays
 using Symbolics
+using GLMakie
 
 using Infiltrator
     

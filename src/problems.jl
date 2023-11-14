@@ -36,15 +36,20 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     
     n_privates = [length(OP.dvars) for OP in OPs]
     m_privates = [length(OP.l) for OP in OPs]
+    n_param = n - sum(n_privates)
     
     dim_z_low = sum(n_privates[i]+2m_privates[i] for i in N1+1:N1+N2; init=0)
     dim_total = sum(n_privates[i]+2m_privates[i]+4*dim_z_low for i in 1:N1; init=0)
     # Each top-level player: privates + duals on private cons + slacks on
     # private cons + slacks on z cons + duals on z cons + duals on z agreement
     # + copy of z
-
-    θ = Symbolics.@variables(θ[1:dim_total])[1] |> Symbolics.scalarize
+    
+    θall = Symbolics.@variables(θ[1:dim_total+n_param])[1] |> Symbolics.scalarize
+    θ = θall[1:dim_total]
     # θ := [x₁ ... xₙ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
+    w = θall[dim_total+1:end]
+
+    #θ = Symbolics.@variables(θ[1:dim_total])[1] |> Symbolics.scalarize
     
     ind = 0
     vars = Dict()
@@ -71,26 +76,29 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
             ind += len
         end
     end
+    inds["w", 0] = dim_total+1:dim_total+n_param
 
     x = vcat((vars["x",i] for i in 1:N1+N2)...)
     x_inds = vcat((inds["x",i] for i in 1:N1+N2)...)
+    x_w = [x; w]
+    x_w_inds = [x_inds; inds["w", 0]]
 
     # construct F for low-level MCP
     grad_lags = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
-        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x)
+        Lag = OPs[i].f(x_w) - vars["λ", i]'*OPs[i].g(x_w)
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
     end 
     cons_s = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
-        OPs[i].g(x) - vars["s", i]
+        OPs[i].g(x_w) - vars["s", i]
     end
     λs = vcat((vars["λ",i] for i in N1+1:N1+N2)...)
 
     F = Num[grad_lags; cons_s; λs]
 
-    F! = Symbolics.build_function(F, θ; expression = Val(false))[2]
+    F! = Symbolics.build_function(F, θall; expression = Val(false))[2]
     J = Symbolics.sparsejacobian(F, z) 
     (J_rows, J_cols, J_vals) = findnz(J)
-    J_vals! = Symbolics.build_function(J_vals, θ; expression = Val(false))[2]
+    J_vals! = Symbolics.build_function(J_vals, θall; expression = Val(false))[2]
 
     l = fill(-Inf, length(grad_lags)+length(cons_s))
     u = fill(+Inf, length(grad_lags)+length(cons_s))
@@ -104,18 +112,18 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     # reminder :  θ := [x₁ ... xₙ₁ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
 
     grad_lags_x = mapreduce(vcat, 1:N1) do i
-        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x) - vars["ψ", i]'*F
+        Lag = OPs[i].f(x_w) - vars["λ", i]'*OPs[i].g(x_w) - vars["ψ", i]'*F
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
     end
     grad_lags_z = mapreduce(vcat, 1:N1) do i
-        Lag = OPs[i].f(x) - vars["λ", i]'*OPs[i].g(x) - vars["ψ", i]'*F #- vars["γ", i]'*vars["z", 1]
+        Lag = OPs[i].f(x_w) - vars["λ", i]'*OPs[i].g(x_w) - vars["ψ", i]'*F #- vars["γ", i]'*vars["z", 1]
         if use_z_slacks
             Lag -= vars["γ", i]'*vars["z", 1]
         end
         grad_lag = Symbolics.gradient(Lag, vars["z", 1])
     end
     cons_s_top = mapreduce(vcat, 1:N1) do i
-        OPs[i].g(x) - vars["s", i]
+        OPs[i].g(x_w) - vars["s", i]
     end
     λs_top = vcat((vars["λ",i] for i in 1:N1)...)
     cons_r = mapreduce(vcat, 1:N1) do i
@@ -160,10 +168,10 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
         local_inds
     end
 
-    Ftotal! = Symbolics.build_function(Ftotal, θ; expression = Val(false))[2]
+    Ftotal! = Symbolics.build_function(Ftotal, θall; expression = Val(false))[2]
     Jtotal = Symbolics.sparsejacobian(Ftotal, θ) 
     (Jtotal_rows, Jtotal_cols, Jtotal_vals) = findnz(Jtotal)
-    Jtotal_vals! = Symbolics.build_function(Jtotal_vals, θ; expression = Val(false))[2]
+    Jtotal_vals! = Symbolics.build_function(Jtotal_vals, θall; expression = Val(false))[2]
 
     top_level = (; F! = Ftotal!, 
                    J_rows = Jtotal_rows, 
@@ -173,7 +181,8 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
                    r_inds = r_inds_top, 
                    l = ltotal, 
                    u = utotal,
-                   n = length(ltotal))
+                   n = length(ltotal),
+                   n_param)
 
     (; low_level, top_level, x_inds, inds)
 end
@@ -188,26 +197,24 @@ function solve(epec, θ; tol=1e-6)
 
     converged = false
     while !converged
-        @info "Solving low-level"
         (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
         errored = false
-        @info "Solution graph has $(length(solution_graph)) pieces."
+        #@info "Solution graph has $(length(solution_graph)) pieces."
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
-            try
-                @info "Solving top level."
+            #try
                 (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
                 if (norm(dθ) > tol)
                     converged = false
                     θ += dθ
                     break
                 end
-            catch e
-                println(e)
-                errored = true
-            end
+            #catch e
+            #    println(e)
+            #    errored = true
+            #end
         end
         if errored
             error("One or more of the subpieces resulted in no solution.")
@@ -217,7 +224,7 @@ function solve(epec, θ; tol=1e-6)
 end
 
 function solve_top_level(mcp, bounds, θ; silent=true)
-    n = length(mcp.l)
+    n = mcp.n
     nnz_total = length(mcp.J_rows)
     J_shape = sparse(mcp.J_rows, mcp.J_cols, ones(Cdouble, nnz_total), n, n)
     J_col = J_shape.colptr[1:end-1]
@@ -227,15 +234,21 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     @assert length(J_len) == n
     @assert length(J_row) == nnz_total
 
+    θF = copy(θ)
+    x = θ[1:n] # WARNING assumes that first n elements are non-parameter values.
+    w = θ[n+1:end]
+
     function F(n, θ, result)
         result .= 0.0
-        mcp.F!(result, θ)
+        θF[1:n] .= θ
+        mcp.F!(result, θF)
         Cint(0)
     end
     function J(n, nnz, θ, col, len, row, data)
         @assert nnz == nnz_total == length(data) == length(row)
         data .= 0.0
-        mcp.J_vals!(data, θ)
+        θF[1:n] .= θ
+        mcp.J_vals!(data, θF)
         col .= J_col
         len .= J_len
         row .= J_row
@@ -260,7 +273,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
          J,
          l,
          u,
-         θ;
+         x;
          silent,
          nnz=nnz_total,
          jacobian_structure_constant = true,
@@ -278,11 +291,12 @@ function solve_top_level(mcp, bounds, θ; silent=true)
         error("Solver failure")
     end
 
-    dθ = θ_out - θ
+    θF[1:n] .= θ_out
+
+    dθ = θF - θ
     (; dθ, status, info)
 end
 
-     
 
 function solve_low_level!(mcp, θ; silent=true)
     n = length(mcp.l)
@@ -315,7 +329,6 @@ function solve_low_level!(mcp, θ; silent=true)
     F(n, z, f)
     already_solved = check_mcp_sol(f, z, mcp.l, mcp.u)
     if already_solved
-        display("Low-level already solved!")
         return (; status=:success, info="problem solved at initialization")
     end
     

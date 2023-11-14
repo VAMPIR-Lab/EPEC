@@ -2,10 +2,9 @@
 # xⁱₖ := [p1 p2 v1 v2]
 # xₖ = dyn(xₖ₋₁, uₖ; Δt) (pointmass dynamics)
 
-
 # P1 wants to make forward progress and stay in center of lane.
 function f1(Z; α1 = 1.0, α2 = 0.0)
-    T = Int(length(Z) / 12) # 2*(state_dim + control_dim) = 12
+    T = Int((length(Z)-8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
     @inbounds Xb = @view(Z[6*T+1:10*T])
@@ -23,7 +22,7 @@ end
 
 # P2 wants to make forward progress and stay in center of lane.
 function f2(Z; α1 = 1.0, α2 = 0.0)
-    T = Int(length(Z) / 12) # 2*(state_dim + control_dim) = 12
+    T = Int((length(Z)-8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
     @inbounds Xb = @view(Z[6*T+1:10*T])
@@ -88,73 +87,62 @@ function l(h; a=5.0, b=4.5)
     sigmoid(h, a, b) - sigmoid(0, a, b)
 end
 
-function g1(Z, x0; Δt = 0.1, r = 1.0)
-    T = Int(length(Z) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds x0a = @view(x0[1:4])
-    @inbounds x0b = @view(x0[5:8])
+function g1(Z; Δt = 0.1, r = 1.0)
+    T = Int((length(Z)-8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
     @inbounds Xb = @view(Z[6*T+1:10*T])
     @inbounds Ub = @view(Z[10*T+1:12*T])
+    @inbounds x0a = @view(Z[12*T+1:12*T+4])
+    @inbounds x0b = @view(Z[12*T+5:12*T+8])
 
     g_dyn = dyn(Xa, Ua, x0a, Δt)
     g_col = col(Xa, Xb, r)
     h_col = responsibility(Xa, Xb)   
-    #h_col = -ones(length(g_col))
+    h_col = -ones(length(g_col))
     [g_dyn; g_col - l.(h_col); Ua; Xa]
-    #[g_dyn; g_col; Ua; Xa]
-    #[g_dyn; Ua; Xa]
 end
 
-function g2(Z, x0; Δt = 0.1, r = 1.0)
-    T = Int(length(Z) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds x0a = @view(x0[1:4])
-    @inbounds x0b = @view(x0[5:8])
+function g2(Z; Δt = 0.1, r = 1.0)
+    T = Int((length(Z)-8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
     @inbounds Xb = @view(Z[6*T+1:10*T])
     @inbounds Ub = @view(Z[10*T+1:12*T])
+    @inbounds x0a = @view(Z[12*T+1:12*T+4])
+    @inbounds x0b = @view(Z[12*T+5:12*T+8])
 
     g_dyn = dyn(Xb, Ub, x0b, Δt)
     g_col = col(Xa, Xb, r)
     h_col = -responsibility(Xa, Xb)   
-    #h_col = ones(length(g_col))
+    h_col = ones(length(g_col))
 
     [g_dyn; g_col - l.(h_col); Ub; Xb]
 end
 
-function setup(;   x0 = [0.1, 0, 0, 2, 0, -1.3, 0, 2],
-                   T=10, 
-                   Δt = 0.1, 
-                   r=1.0, 
-                   α1 = 1.0,
-                   α2 = 0.01,
-                   u_max_1 = 5.0, 
-                   u_max_2 = 10.0, 
-                   v_max_1 = 2.0, 
-                   v_max_2 = 3.0, 
-                   lat_max = 0.75)
+function setup(; T=10, 
+                 Δt = 0.1, 
+                 r=1.0, 
+                 α1 = 0.01,
+                 α2 = 0.01,
+                 u_max_1 = 5.0, 
+                 u_max_2 = 10.0, 
+                 v_max_1 = 2.0, 
+                 v_max_2 = 3.0, 
+                 lat_max = 0.75)
     lb1 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
     ub1 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
     lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
     ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
-    
-    #lb1 = [fill(0.0, 4*T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
-    #ub1 = [fill(0.0, 4*T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
-    #lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
-    #ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
 
     f1_pinned = (z -> f1(z; α1, α2))
     f2_pinned = (z -> f2(z; α1, α2))
-    g1_pinned = (z -> g1(z, x0))
-    g2_pinned = (z -> g2(z, x0))
 
-    OP1 = OptimizationProblem(12*T, 1:6*T, f1_pinned, g1_pinned, lb1, ub1)
-    OP2 = OptimizationProblem(12*T, 1:6*T, f2_pinned, g2_pinned, lb2, ub2)
+    OP1 = OptimizationProblem(12*T+8, 1:6*T, f1_pinned, g1, lb1, ub1)
+    OP2 = OptimizationProblem(12*T+8, 1:6*T, f2_pinned, g2, lb2, ub2)
 
     gnep = [OP1 OP2]
-    #bilevel = [OP1; OP2]
-    bilevel = EPEC.create_epec((1,1), OP1, OP2; use_z_slacks=false)
+    bilevel = [OP1; OP2]
 
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
@@ -162,7 +150,9 @@ function setup(;   x0 = [0.1, 0, 0, 2, 0, -1.3, 0, 2],
         @inbounds Ua = @view(Z[4*T+1:6*T])
         @inbounds Xb = @view(Z[6*T+1:10*T])
         @inbounds Ub = @view(Z[10*T+1:12*T])
-        (; Xa, Ua, Xb, Ub)
+        @inbounds x0a = @view(Z[12*T+1:12*T+4])
+        @inbounds x0b = @view(Z[12*T+5:12*T+8])
+        (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
     function extract_bilevel(θ)
         Z = θ[bilevel.x_inds]
@@ -170,13 +160,14 @@ function setup(;   x0 = [0.1, 0, 0, 2, 0, -1.3, 0, 2],
         @inbounds Ua = @view(Z[4*T+1:6*T])
         @inbounds Xb = @view(Z[6*T+1:10*T])
         @inbounds Ub = @view(Z[10*T+1:12*T])
-        (; Xa, Ua, Xb, Ub)
+        @inbounds x0a = @view(Z[12*T+1:12*T+4])
+        @inbounds x0b = @view(Z[12*T+5:12*T+8])
+        (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, x0)
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2)
 end
 
-function solve_seq(probs)
-    @info "Solving GNEP initialization"
+function solve_seq(probs, x0)
     init = zeros(probs.gnep.top_level.n)
     X = init[probs.gnep.x_inds]
     T = Int(length(X) / 12)
@@ -184,8 +175,8 @@ function solve_seq(probs)
     Ua = []
     Xb = []
     Ub = []
-    xa = probs.x0[1:4]
-    xb = probs.x0[5:8]
+    xa = x0[1:4]
+    xb = x0[5:8]
     for t in 1:T
         ua = zeros(2)
         ub = zeros(2)
@@ -197,29 +188,42 @@ function solve_seq(probs)
         append!(Xb, xb)
     end
     init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
+    init = [init; x0]
 
     θg = solve(probs.gnep, init)
-    @info "GNEP initialization solved!"
-    θb = zeros(probs.bilevel.top_level.n)
+    θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
     θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
     θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
     θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
     θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
     θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
+    θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
     θ = solve(probs.bilevel, θb)
     Z = probs.extract_bilevel(θ)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
+    #P1 = [x0[1:4]'; P1]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
+    #P2 = [x0[5:8]'; P2]
     
     gd = col(Z.Xa, Z.Xb, 1.0)
     h = responsibility(Z.Xa, Z.Xb)
     gd_both = [gd-l.(h) gd-l.(-h) gd]
-
-
-    display("Player 1 state (pos 1 | pos 2 | vel 1 | vel 2")
-    display(P1)
-    display("Player 2 state (pos 1 | pos 2 | vel 1 | vel 2")
-    display(P2)
-    display("constraint distances (P1 | P2 | raw)")
-    display(gd_both)
+    (; P1, P2, gd_both, h)
 end
+
+function solve_simulation(probs, x0, T)
+    results = Dict()
+    for t = 1:T
+        @info "Simulation step $t"
+        r = solve_seq(probs, x0)
+        x0a = r.P1[1,:]
+        x0b = r.P2[1,:]
+        results[t] = (; x0, r.P1, r.P2, r.gd_both, r.h)
+        x0 = [x0a; x0b]
+    end
+    results
+end
+
+
+
+
