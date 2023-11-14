@@ -99,10 +99,11 @@ function g1(Z, x0; Δt = 0.1, r = 1.0)
 
     g_dyn = dyn(Xa, Ua, x0a, Δt)
     g_col = col(Xa, Xb, r)
-    #h_col = responsibility(Xa, Xb)   
-    h_col = -ones(length(g_col))
-    #[g_dyn; g_col - l.(h_col); Ua; Xa]
-    [g_dyn; Ua; Xa]
+    h_col = responsibility(Xa, Xb)   
+    #h_col = -ones(length(g_col))
+    [g_dyn; g_col - l.(h_col); Ua; Xa]
+    #[g_dyn; g_col; Ua; Xa]
+    #[g_dyn; Ua; Xa]
 end
 
 function g2(Z, x0; Δt = 0.1, r = 1.0)
@@ -116,33 +117,32 @@ function g2(Z, x0; Δt = 0.1, r = 1.0)
 
     g_dyn = dyn(Xb, Ub, x0b, Δt)
     g_col = col(Xa, Xb, r)
-    #h_col = -responsibility(Xa, Xb)   
-    h_col = ones(length(g_col))
+    h_col = -responsibility(Xa, Xb)   
+    #h_col = ones(length(g_col))
 
-    #[g_dyn; g_col - l.(h_col); Ub; Xb]
-    [g_dyn; g_col; Ub; Xb]
-    #[g_dyn; Ub; Xb]
+    [g_dyn; g_col - l.(h_col); Ub; Xb]
 end
 
-function setup(x0; T=10, 
+function setup(;   x0 = [0.1, 0, 0, 2, 0, -1.3, 0, 2],
+                   T=10, 
                    Δt = 0.1, 
                    r=1.0, 
                    α1 = 1.0,
                    α2 = 0.01,
-                   u_max_1 = 10.0, 
+                   u_max_1 = 5.0, 
                    u_max_2 = 10.0, 
-                   v_max_1 = 3.0, 
+                   v_max_1 = 2.0, 
                    v_max_2 = 3.0, 
                    lat_max = 0.75)
-    #lb1 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
-    #ub1 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
-    #lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
-    #ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
-    
-    lb1 = [fill(0.0, 4*T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
-    ub1 = [fill(0.0, 4*T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
+    lb1 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
+    ub1 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
     lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
     ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
+    
+    #lb1 = [fill(0.0, 4*T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
+    #ub1 = [fill(0.0, 4*T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
+    #lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
+    #ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
 
     f1_pinned = (z -> f1(z; α1, α2))
     f2_pinned = (z -> f2(z; α1, α2))
@@ -154,7 +154,7 @@ function setup(x0; T=10,
 
     gnep = [OP1 OP2]
     #bilevel = [OP1; OP2]
-    bilevel = EPEC.create_epec((1,1), OP1, OP2; use_z_slacks=true)
+    bilevel = EPEC.create_epec((1,1), OP1, OP2; use_z_slacks=false)
 
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
@@ -172,10 +172,10 @@ function setup(x0; T=10,
         @inbounds Ub = @view(Z[10*T+1:12*T])
         (; Xa, Ua, Xb, Ub)
     end
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2)
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, x0)
 end
 
-function solve_seq(probs, x0)
+function solve_seq(probs)
     @info "Solving GNEP initialization"
     init = zeros(probs.gnep.top_level.n)
     X = init[probs.gnep.x_inds]
@@ -184,8 +184,8 @@ function solve_seq(probs, x0)
     Ua = []
     Xb = []
     Ub = []
-    xa = x0[1:4]
-    xb = x0[5:8]
+    xa = probs.x0[1:4]
+    xb = probs.x0[5:8]
     for t in 1:T
         ua = zeros(2)
         ub = zeros(2)
@@ -210,6 +210,16 @@ function solve_seq(probs, x0)
     Z = probs.extract_bilevel(θ)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
+    
+    gd = col(Z.Xa, Z.Xb, 1.0)
+    h = responsibility(Z.Xa, Z.Xb)
+    gd_both = [gd-l.(h) gd-l.(-h) gd]
+
+
+    display("Player 1 state (pos 1 | pos 2 | vel 1 | vel 2")
     display(P1)
+    display("Player 2 state (pos 1 | pos 2 | vel 1 | vel 2")
     display(P2)
+    display("constraint distances (P1 | P2 | raw)")
+    display(gd_both)
 end
