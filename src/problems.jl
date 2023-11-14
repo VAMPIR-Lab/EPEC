@@ -205,6 +205,7 @@ function solve(epec, θ; tol=1e-6)
                     break
                 end
             catch e
+                println(e)
                 errored = true
             end
         end
@@ -217,16 +218,23 @@ end
 
 function solve_top_level(mcp, bounds, θ; silent=true)
     n = length(mcp.l)
-    nnz = length(mcp.J_rows)
-    J_shape = sparse(mcp.J_rows, mcp.J_cols, Vector{Cdouble}(undef, nnz), n, n)
+    nnz_total = length(mcp.J_rows)
+    J_shape = sparse(mcp.J_rows, mcp.J_cols, ones(Cdouble, nnz_total), n, n)
     J_col = J_shape.colptr[1:end-1]
     J_len = diff(J_shape.colptr)
     J_row = J_shape.rowval
+    @assert length(J_col) == n
+    @assert length(J_len) == n
+    @assert length(J_row) == nnz_total
+
     function F(n, θ, result)
+        result .= 0.0
         mcp.F!(result, θ)
         Cint(0)
     end
     function J(n, nnz, θ, col, len, row, data)
+        @assert nnz == nnz_total == length(data) == length(row)
+        data .= 0.0
         mcp.J_vals!(data, θ)
         col .= J_col
         len .= J_len
@@ -246,7 +254,6 @@ function solve_top_level(mcp, bounds, θ; silent=true)
         u[ind_set] .= bounds.uf
     end
 
-
     PATHSolver.c_api_License_SetString("2830898829&Courtesy&&&USR&45321&5_1_2021&1000&PATH&GEN&31_12_2025&0_0_0&6000&0_0")
     status, θ_out, info = PATHSolver.solve_mcp(
          F,
@@ -255,17 +262,19 @@ function solve_top_level(mcp, bounds, θ; silent=true)
          u,
          θ;
          silent,
-         nnz,
+         nnz=nnz_total,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
-         #convergence_tolerance=1e-8,
+         cumulative_iteration_limit = 50_000,
+         convergence_tolerance=1e-8,
      ) 
     
-    if status != PATHSolver.MCP_Solved && silent
-        return solve_top_level(mcp, bounds, θ; silent=false)
-    end
+    #if status != PATHSolver.MCP_Solved && silent
+    #    return solve_top_level(mcp, bounds, θ; silent=false)
+    #end
 
     if status != PATHSolver.MCP_Solved
+        @infiltrate
         error("Solver failure")
     end
 
@@ -273,50 +282,29 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     (; dθ, status, info)
 end
 
-function check_mcp_sol(f, z, l, u; tol=1e-4)
-    n = length(f)
-    sol = true
-    for i in 1:n
-        if isapprox(l[i], u[i]; atol=tol)
-            continue
-        elseif f[i] ≥ tol && z[i] < l[i]+tol
-            continue
-        elseif -tol < f[i] < tol && z[i] < l[i]+tol
-            continue
-        elseif -tol < f[i] < tol && l[i]+tol ≤ z[i] ≤ u[i]-tol
-            continue
-        elseif -tol < f[i] < tol && z[i] > u[i]-tol
-            continue
-        elseif f[i] ≤ -tol && z[i] > u[i]-tol
-            continue
-        else
-            @infiltrate
-            sol = false
-            break
-        end
-    end
-    return sol
-end
      
 
 function solve_low_level!(mcp, θ; silent=true)
     n = length(mcp.l)
     n == 0 && return (; status=:success, info="problem of zero dimension")
     θF = copy(θ)
-    nnz = length(mcp.J_rows)
-    J_shape = sparse(mcp.J_rows, mcp.J_cols, Vector{Cdouble}(undef, nnz), n, n)
+    nnz_total = length(mcp.J_rows)
+    J_shape = sparse(mcp.J_rows, mcp.J_cols, Vector{Cdouble}(undef, nnz_total), n, n)
     J_col = J_shape.colptr[1:end-1]
     J_len = diff(J_shape.colptr)
     J_row = J_shape.rowval
     z = θF[mcp.z_inds]
 
     function F(n, z, result)
+        result .= 0.0
         θF[mcp.z_inds] .= z
         mcp.F!(result, θF)
         Cint(0)
     end
     function J(n, nnz, z, col, len, row, data)
+        @assert nnz == nnz_total
         θF[mcp.z_inds] .= z
+        data .= 0.0
         mcp.J_vals!(data, θF)
         col .= J_col
         len .= J_len
@@ -339,7 +327,7 @@ function solve_low_level!(mcp, θ; silent=true)
          mcp.u,
          z;
          silent,
-         nnz,
+         nnz=nnz_total,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
          cumulative_iteration_limit = 50_000,
@@ -355,6 +343,30 @@ function solve_low_level!(mcp, θ; silent=true)
     θ[mcp.z_inds] .= z_out 
 
     (; status, info)
+end
+
+function check_mcp_sol(f, z, l, u; tol=1e-4)
+    n = length(f)
+    sol = true
+    for i in 1:n
+        if isapprox(l[i], u[i]; atol=tol)
+            continue
+        elseif f[i] ≥ tol && z[i] < l[i]+tol
+            continue
+        elseif -tol < f[i] < tol && z[i] < l[i]+tol
+            continue
+        elseif -tol < f[i] < tol && l[i]+tol ≤ z[i] ≤ u[i]-tol
+            continue
+        elseif -tol < f[i] < tol && z[i] > u[i]-tol
+            continue
+        elseif f[i] ≤ -tol && z[i] > u[i]-tol
+            continue
+        else
+            sol = false
+            break
+        end
+    end
+    return sol
 end
 
 function get_local_solution_graph(mcp, θ; tol=1e-5)

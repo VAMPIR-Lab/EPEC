@@ -124,7 +124,6 @@ function g2(Z, x0; Δt = 0.1, r = 1.0)
     #[g_dyn; Ub; Xb]
 end
 
-
 function setup(x0; T=10, 
                    Δt = 0.1, 
                    r=1.0, 
@@ -176,9 +175,30 @@ function setup(x0; T=10,
     problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2)
 end
 
-function solve_seq(probs)
+function solve_seq(probs, x0)
     @info "Solving GNEP initialization"
-    θg = solve(probs.gnep, randn(probs.gnep.top_level.n))
+    init = zeros(probs.gnep.top_level.n)
+    X = init[probs.gnep.x_inds]
+    T = Int(length(X) / 12)
+    Xa = []
+    Ua = []
+    Xb = []
+    Ub = []
+    xa = x0[1:4]
+    xb = x0[5:8]
+    for t in 1:T
+        ua = zeros(2)
+        ub = zeros(2)
+        xa = pointmass(xa, ua, 0.1)
+        xb = pointmass(xb, ub, 0.1)
+        append!(Ua, ua)
+        append!(Ub, ub)
+        append!(Xa, xa)
+        append!(Xb, xb)
+    end
+    init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
+
+    θg = solve(probs.gnep, init)
     @info "GNEP initialization solved!"
     θb = zeros(probs.bilevel.top_level.n)
     θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
@@ -186,5 +206,10 @@ function solve_seq(probs)
     θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
     θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
     θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
-    solve(probs.bilevel, θb)
+    θ = solve(probs.bilevel, θb)
+    Z = probs.extract_bilevel(θ)
+    P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
+    P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
+    display(P1)
+    display(P2)
 end
