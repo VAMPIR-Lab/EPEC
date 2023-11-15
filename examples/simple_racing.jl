@@ -38,21 +38,23 @@ function f2(Z; α1 = 1.0, α2 = 0.0)
     cost
 end
 
-function pointmass(x, u, Δt)
+function pointmass(x, u, Δt, cd)
     Δt2 = 0.5*Δt*Δt
-    [x[1] + Δt * x[3] + Δt2 * u[1],
-     x[2] + Δt * x[4] + Δt2 * u[2],
-     x[3] + Δt * u[1],
-     x[4] + Δt * u[2]]
+    a1 = u[1] - cd * x[3]
+    a2 = u[2] - cd * x[4]
+    [x[1] + Δt * x[3] + Δt2 * a1,
+     x[2] + Δt * x[4] + Δt2 * a2,
+     x[3] + Δt * a1,
+     x[4] + Δt * a2]
 end
 
-function dyn(X, U, x0, Δt)
+function dyn(X, U, x0, Δt, cd)
     T = Int(length(X) / 4)
     x = x0
     mapreduce(vcat, 1:T) do t
         xx = X[(t-1)*4+1:t*4]
         u = U[(t-1)*2+1:t*2]
-        diff = xx - pointmass(x, u, Δt)
+        diff = xx - pointmass(x, u, Δt, cd)
         x = xx
         diff
     end
@@ -77,6 +79,37 @@ function responsibility(Xa, Xb)
     end
 end
 
+function accel_bounds_1(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
+    T = Int(length(Xa) / 4)
+    d = mapreduce(vcat, 1:T) do t
+        @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
+        @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
+        [xa[1]-xb[1] xa[2]-xb[2]]
+    end
+    @assert size(d) == (T, 2)
+    du = u_max_drafting - u_max_nominal
+    u_max_1 = du * sigmoid.(d[:,2] .+ box_length, 10.0, 0)  .+ u_max_nominal
+    u_max_2 = du * sigmoid.(-d[:,2], 10.0, 0)  .+ u_max_nominal
+    u_max_3 = du * sigmoid.(d[:,1] .+ box_width/2, 10.0, 0)  .+ u_max_nominal
+    u_max_4 = du * sigmoid.(-d[:,1] .+ box_width/2, 10.0, 0)  .+ u_max_nominal
+    (u_max_1, u_max_2, u_max_3, u_max_4)
+end
+function accel_bounds_2(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
+    T = Int(length(Xa) / 4)
+    d = mapreduce(vcat, 1:T) do t
+        @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
+        @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
+        [xb[1]-xa[1] xb[2]-xa[2]]
+    end
+    @assert size(d) == (T, 2)
+    du = u_max_drafting - u_max_nominal
+    u_max_1 = du * sigmoid.(d[:,2] .+ box_length, 10.0, 0)  .+ u_max_nominal
+    u_max_2 = du * sigmoid.(-d[:,2], 10.0, 0)  .+ u_max_nominal
+    u_max_3 = du * sigmoid.(d[:,1] .+ box_width/2, 10.0, 0)  .+ u_max_nominal
+    u_max_4 = du * sigmoid.(-d[:,1] .+ box_width/2, 10.0, 0)  .+ u_max_nominal
+    (u_max_1, u_max_2, u_max_3, u_max_4)
+end
+
 function sigmoid(x, a, b)
     xx = x*a+b
     1.0 / (1.0 + exp(-xx))
@@ -87,7 +120,14 @@ function l(h; a=5.0, b=4.5)
     sigmoid(h, a, b) - sigmoid(0, a, b)
 end
 
-function g1(Z; Δt = 0.1, r = 1.0)
+function g1(Z; 
+        Δt = 0.1, 
+        r = 1.0, 
+        cd = 1.0, 
+        u_max_nominal=5.0, 
+        u_max_drafting=3.0,
+        box_length=3.0, 
+        box_width=1.0)
     T = Int((length(Z)-8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
@@ -96,14 +136,37 @@ function g1(Z; Δt = 0.1, r = 1.0)
     @inbounds x0a = @view(Z[12*T+1:12*T+4])
     @inbounds x0b = @view(Z[12*T+5:12*T+8])
 
-    g_dyn = dyn(Xa, Ua, x0a, Δt)
+    g_dyn = dyn(Xa, Ua, x0a, Δt, cd)
     g_col = col(Xa, Xb, r)
     h_col = responsibility(Xa, Xb)   
-    h_col = -ones(length(g_col))
-    [g_dyn; g_col - l.(h_col); Ua; Xa]
+    u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds_1(Xa, 
+                                                        Xb, 
+                                                        u_max_nominal, 
+                                                        u_max_drafting, 
+                                                        box_length, 
+                                                        box_width) 
+    long_accel = @view(Ua[2:2:end])
+    lat_accel = @view(Ua[1:2:end])
+    lat_pos = @view(Xa[1:4:end])
+
+    [g_dyn; 
+     g_col - l.(h_col); 
+     lat_accel; 
+     long_accel-u_max_1; 
+     long_accel-u_max_2; 
+     long_accel-u_max_3; 
+     long_accel-u_max_4; 
+     lat_pos]
 end
 
-function g2(Z; Δt = 0.1, r = 1.0)
+function g2(Z; 
+        Δt = 0.1, 
+        r = 1.0, 
+        cd = 1.0, 
+        u_max_nominal=3.0, 
+        u_max_drafting=5.0,
+        box_length=3.0, 
+        box_width=1.0)
     T = Int((length(Z)-8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
@@ -112,34 +175,51 @@ function g2(Z; Δt = 0.1, r = 1.0)
     @inbounds x0a = @view(Z[12*T+1:12*T+4])
     @inbounds x0b = @view(Z[12*T+5:12*T+8])
 
-    g_dyn = dyn(Xb, Ub, x0b, Δt)
+    g_dyn = dyn(Xb, Ub, x0b, Δt, cd)
     g_col = col(Xa, Xb, r)
     h_col = -responsibility(Xa, Xb)   
-    h_col = ones(length(g_col))
+    u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds_2(Xa, 
+                                                        Xb, 
+                                                        u_max_nominal, 
+                                                        u_max_drafting, 
+                                                        box_length, 
+                                                        box_width) 
+    long_accel = @view(Ub[2:2:end])
+    lat_accel = @view(Ub[1:2:end])
+    lat_pos = @view(Xb[1:4:end])
 
-    [g_dyn; g_col - l.(h_col); Ub; Xb]
+    [g_dyn; 
+     g_col - l.(h_col); 
+     lat_accel; 
+     long_accel-u_max_1; 
+     long_accel-u_max_2; 
+     long_accel-u_max_3; 
+     long_accel-u_max_4; 
+     lat_pos]
 end
 
 function setup(; T=10, 
                  Δt = 0.1, 
                  r=1.0, 
                  α1 = 0.01,
-                 α2 = 0.01,
-                 u_max_1 = 5.0, 
-                 u_max_2 = 10.0, 
-                 v_max_1 = 2.0, 
-                 v_max_2 = 3.0, 
-                 lat_max = 0.75)
-    lb1 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_1, 2*T); repeat([-lat_max, -Inf, -v_max_1, -v_max_1], T)]
-    ub1 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_1, 2*T); repeat([+lat_max, +Inf, +v_max_1, +v_max_1], T)]
-    lb2 = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_2, 2*T); repeat([-lat_max, -Inf, -v_max_2, -v_max_2], T)]
-    ub2 = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_2, 2*T); repeat([+lat_max, +Inf, +v_max_2, +v_max_2], T)]
+                 α2 = 0.001,
+                 cd = 0.5,
+                 u_max_nominal = 3.0, 
+                 u_max_drafting = 5.0,
+                 box_length=3.0,
+                 box_width=1.0,
+                 lat_max = 2.0)
+
+    lb = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4*T); fill(-lat_max, T)]
+    ub = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_nominal, T); fill( 0.0, 4*T); fill(+lat_max, T)]
 
     f1_pinned = (z -> f1(z; α1, α2))
     f2_pinned = (z -> f2(z; α1, α2))
+    g1_pinned = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
+    g2_pinned = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
 
-    OP1 = OptimizationProblem(12*T+8, 1:6*T, f1_pinned, g1, lb1, ub1)
-    OP2 = OptimizationProblem(12*T+8, 1:6*T, f2_pinned, g2, lb2, ub2)
+    OP1 = OptimizationProblem(12*T+8, 1:6*T, f1_pinned, g1, lb, ub)
+    OP2 = OptimizationProblem(12*T+8, 1:6*T, f2_pinned, g2, lb, ub)
 
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
@@ -164,13 +244,15 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2)
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; Δt, r, cd))
 end
 
 function solve_seq(probs, x0)
     init = zeros(probs.gnep.top_level.n)
     X = init[probs.gnep.x_inds]
     T = Int(length(X) / 12)
+    Δt = probs.params.Δt
+    cd = probs.params.cd
     Xa = []
     Ua = []
     Xb = []
@@ -178,10 +260,10 @@ function solve_seq(probs, x0)
     xa = x0[1:4]
     xb = x0[5:8]
     for t in 1:T
-        ua = zeros(2)
-        ub = zeros(2)
-        xa = pointmass(xa, ua, 0.1)
-        xb = pointmass(xb, ub, 0.1)
+        ua = cd*xa[3:4]
+        ub = cd*xb[3:4]
+        xa = pointmass(xa, ua, Δt, cd)
+        xb = pointmass(xb, ub, Δt, cd)
         append!(Ua, ua)
         append!(Ub, ub)
         append!(Xa, xa)
@@ -201,14 +283,29 @@ function solve_seq(probs, x0)
     θ = solve(probs.bilevel, θb)
     Z = probs.extract_bilevel(θ)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
+    U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
     #P1 = [x0[1:4]'; P1]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
+    U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
     #P2 = [x0[5:8]'; P2]
-    
-    gd = col(Z.Xa, Z.Xb, 1.0)
+   
+    #u_max_11, u_max_12, u_max_13, u_max_14 = accel_bounds_1(Z.Xa, 
+    #                                                    Z.Xb, 
+    #                                                    3.0, 
+    #                                                    5.0, 
+    #                                                    3.0, 
+    #                                                    1.0) 
+    #u_max_21, u_max_22, u_max_23, u_max_24 = accel_bounds_2(Z.Xa, 
+    #                                                    Z.Xb, 
+    #                                                    3.0, 
+    #                                                    5.0, 
+    #                                                    3.0, 
+    #                                                    1.0) 
+    #g2val = g2([Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]; cd=probs.params.cd)
+    gd = col(Z.Xa, Z.Xb, probs.params.r)
     h = responsibility(Z.Xa, Z.Xb)
     gd_both = [gd-l.(h) gd-l.(-h) gd]
-    (; P1, P2, gd_both, h)
+    (; P1, P2, gd_both, h, U1, U2)#, u_max_11, u_max_12, u_max_13, u_max_14, u_max_21, u_max_22, u_max_23, u_max_24)
 end
 
 function solve_simulation(probs, x0, T)
@@ -218,7 +315,7 @@ function solve_simulation(probs, x0, T)
         r = solve_seq(probs, x0)
         x0a = r.P1[1,:]
         x0b = r.P2[1,:]
-        results[t] = (; x0, r.P1, r.P2, r.gd_both, r.h)
+        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h)
         x0 = [x0a; x0b]
     end
     results

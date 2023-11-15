@@ -191,16 +191,21 @@ function solve(epec; tol=1e-6)
     solve(epec, zeros(epec.top_level.n); tol)
 end
 
-function solve(epec, θ; tol=1e-6)
+function solve(epec, θ; tol=1e-6, max_iters=30)
     low_level = epec.low_level
     top_level = epec.top_level
 
+    iters = 0
     converged = false
     while !converged
+        iters += 1
         (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
         errored = false
+        if iters > max_iters
+            @infiltrate
+        end
         #@info "Solution graph has $(length(solution_graph)) pieces."
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
