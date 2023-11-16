@@ -244,7 +244,7 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; Δt, r, cd))
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; Δt, r, cd, lat_max))
 end
 
 function solve_seq(probs, x0)
@@ -321,6 +321,32 @@ function solve_simulation(probs, x0, T)
     results
 end
 
+function visualize(probs, sim_results)
+    T = length(sim_results)
+    f = Figure(resolution = (1000, 1000))
+    ax = Axis(f[1,1], aspect = DataAspect())
+    rad = sqrt(probs.params.r) / 2
+    lat = probs.params.lat_max + rad
+    lines!(ax, [-lat, -lat], [-10.0, 30.0], color=:black)
+    lines!(ax, [+lat, +lat], [-10.0, 30.0], color=:black)
 
+    xa1 = Observable(sim_results[1].x0[1])
+    xa2 = Observable(sim_results[1].x0[2])
+    xb1 = Observable(sim_results[1].x0[5])
+    xb2 = Observable(sim_results[1].x0[6])
 
+    circ_x = [rad*cos(t) for t in 0:0.1:2π]
+    circ_y = [rad*sin(t) for t in 0:0.1:2π]
+    lines!(ax, @lift(circ_x .+ $xa1), @lift(circ_y .+ $xa2), color=:blue)
+    lines!(ax, @lift(circ_x .+ $xb1), @lift(circ_y .+ $xb2), color=:red)
+    
+    display(f)
+    for t in 2:T
+        xa1[] = sim_results[t].x0[1]
+        xa2[] = sim_results[t].x0[2]
+        xb1[] = sim_results[t].x0[5]
+        xb2[] = sim_results[t].x0[6]
+        sleep(0.1)
+    end
+end
 
