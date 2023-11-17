@@ -15,7 +15,7 @@ function f1(Z; α1 = 1.0, α2 = 0.0)
         @inbounds xat = @view(Xa[(t-1)*4+1:t*4])
         @inbounds xbt = @view(Xb[(t-1)*4+1:t*4])
         @inbounds ut = @view(Ua[(t-1)*2+1:t*2]) 
-        cost += xbt[2]-xat[2] + α1*xat[1]^2 + α2 * ut'*ut
+        cost += xbt[2]-2*xat[2] + α1*xat[1]^2 + α2 * ut'*ut
     end
     cost
 end
@@ -33,7 +33,7 @@ function f2(Z; α1 = 1.0, α2 = 0.0)
         @inbounds xat = @view(Xa[(t-1)*4+1:t*4])
         @inbounds xbt = @view(Xb[(t-1)*4+1:t*4])
         @inbounds ut = @view(Ub[(t-1)*2+1:t*2]) 
-        cost += xat[2]-xbt[2] + α1*xbt[1]^2 + α2 * ut'*ut
+        cost += xat[2]-2*xbt[2] + α1*xbt[1]^2 + α2 * ut'*ut
     end
     cost
 end
@@ -120,12 +120,12 @@ function l(h; a=5.0, b=4.5)
     sigmoid(h, a, b) - sigmoid(0, a, b)
 end
 
-function g1(Z; 
+function g1(Z,
         Δt = 0.1, 
         r = 1.0, 
         cd = 1.0, 
-        u_max_nominal=5.0, 
-        u_max_drafting=3.0,
+        u_max_nominal=2.0, 
+        u_max_drafting=5.0,
         box_length=3.0, 
         box_width=1.0)
     T = Int((length(Z)-8) / 12) # 2*(state_dim + control_dim) = 12
@@ -159,11 +159,11 @@ function g1(Z;
      lat_pos]
 end
 
-function g2(Z; 
+function g2(Z,
         Δt = 0.1, 
         r = 1.0, 
         cd = 1.0, 
-        u_max_nominal=3.0, 
+        u_max_nominal=2.0, 
         u_max_drafting=5.0,
         box_length=3.0, 
         box_width=1.0)
@@ -203,23 +203,23 @@ function setup(; T=10,
                  r=1.0, 
                  α1 = 0.01,
                  α2 = 0.001,
-                 cd = 0.5,
-                 u_max_nominal = 3.0, 
+                 cd = 0.2,
+                 u_max_nominal = 2.0, 
                  u_max_drafting = 5.0,
                  box_length=3.0,
                  box_width=1.0,
-                 lat_max = 2.0)
+                 lat_max = 5.0)
 
     lb = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4*T); fill(-lat_max, T)]
     ub = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_nominal, T); fill( 0.0, 4*T); fill(+lat_max, T)]
 
     f1_pinned = (z -> f1(z; α1, α2))
     f2_pinned = (z -> f2(z; α1, α2))
-    g1_pinned = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
-    g2_pinned = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
+    g1_pinned = (z -> g1(z, Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
+    g2_pinned = (z -> g2(z, Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
 
-    OP1 = OptimizationProblem(12*T+8, 1:6*T, f1_pinned, g1, lb, ub)
-    OP2 = OptimizationProblem(12*T+8, 1:6*T, f2_pinned, g2, lb, ub)
+    OP1 = OptimizationProblem(12*T+8, 1:6*T, f1_pinned, g1_pinned, lb, ub)
+    OP2 = OptimizationProblem(12*T+8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
 
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
@@ -244,7 +244,7 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; Δt, r, cd, lat_max))
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; Δt, r, cd, lat_max, u_max_nominal, u_max_drafting))
 end
 
 function solve_seq(probs, x0)
@@ -308,7 +308,7 @@ function solve_seq(probs, x0)
     (; P1, P2, gd_both, h, U1, U2)#, u_max_11, u_max_12, u_max_13, u_max_14, u_max_21, u_max_22, u_max_23, u_max_24)
 end
 
-function solve_simulation(probs, x0, T)
+function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
     results = Dict()
     for t = 1:T
         @info "Simulation step $t"
@@ -321,14 +321,15 @@ function solve_simulation(probs, x0, T)
     results
 end
 
-function visualize(probs, sim_results)
+function visualize(probs, sim_results; save=false)
     T = length(sim_results)
     f = Figure(resolution = (1000, 1000))
     ax = Axis(f[1,1], aspect = DataAspect())
     rad = sqrt(probs.params.r) / 2
     lat = probs.params.lat_max + rad
-    lines!(ax, [-lat, -lat], [-10.0, 30.0], color=:black)
-    lines!(ax, [+lat, +lat], [-10.0, 30.0], color=:black)
+    lat = 5.0
+    lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
+    lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
 
     xa1 = Observable(sim_results[1].x0[1])
     xa2 = Observable(sim_results[1].x0[2])
@@ -341,12 +342,28 @@ function visualize(probs, sim_results)
     lines!(ax, @lift(circ_x .+ $xb1), @lift(circ_y .+ $xb2), color=:red)
     
     display(f)
-    for t in 2:T
-        xa1[] = sim_results[t].x0[1]
-        xa2[] = sim_results[t].x0[2]
-        xb1[] = sim_results[t].x0[5]
-        xb2[] = sim_results[t].x0[6]
-        sleep(0.1)
+
+    if save
+        record(f, "jockeying_animation.mp4", 2:T; framerate = 10) do t
+            xa1[] = sim_results[t].x0[1]
+            xa2[] = sim_results[t].x0[2]
+            xb1[] = sim_results[t].x0[5]
+            xb2[] = sim_results[t].x0[6]
+            xlims!(ax, -2*lat, 2*lat)
+            ylims!(ax, xb2[]-2*lat, xb2[]+2*lat)
+        end
+    else
+
+
+        for t in 2:T
+            xa1[] = sim_results[t].x0[1]
+            xa2[] = sim_results[t].x0[2]
+            xb1[] = sim_results[t].x0[5]
+            xb2[] = sim_results[t].x0[6]
+            xlims!(ax, -2*lat, 2*lat)
+            ylims!(ax, xb2[]-2*lat, xb2[]+2*lat)
+            sleep(0.2)
+        end
     end
 end
 

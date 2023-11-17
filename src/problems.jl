@@ -203,14 +203,12 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
         errored = false
-        if iters > max_iters
-            @infiltrate
-        end
         #@info "Solution graph has $(length(solution_graph)) pieces."
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
             #try
                 (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
+            @infiltrate iters > max_iters
                 if (norm(dθ) > tol)
                     converged = false
                     θ += dθ
@@ -270,6 +268,13 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     for ind_set in mcp.r_inds
         l[ind_set] .= bounds.lf
         u[ind_set] .= bounds.uf
+    end
+   
+    f = zeros(n)
+    F(n, x, f)
+    already_solved = check_mcp_sol(f, x, l, u)
+    if already_solved
+        return (; dθ = zero(θF), status=:success, info="problem solved at initialization")
     end
 
     PATHSolver.c_api_License_SetString("2830898829&Courtesy&&&USR&45321&5_1_2021&1000&PATH&GEN&31_12_2025&0_0_0&6000&0_0")

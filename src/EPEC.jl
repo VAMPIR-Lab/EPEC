@@ -10,7 +10,7 @@ using Infiltrator
     
 
 include("problems.jl")
-include("../examples/stackelnash_racing.jl")
+include("../examples/simple_racing.jl")
 
 export OptimizationProblem, solve
 
