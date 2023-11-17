@@ -273,39 +273,25 @@ function solve_seq(probs, x0)
     init = [init; x0]
 
     θg = solve(probs.gnep, init)
-    θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-    θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
-    θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
-    θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
-    θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
-    θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
-    θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
-    θ = solve(probs.bilevel, θb)
-    Z = probs.extract_bilevel(θ)
+    #θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+    #θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
+    #θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
+    #θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
+    #θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
+    #θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
+    #θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
+    #θ = solve(probs.bilevel, θb)
+    #Z = probs.extract_bilevel(θ)
+    Z = probs.extract_gnep(θg)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
-    #P1 = [x0[1:4]'; P1]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
     U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
-    #P2 = [x0[5:8]'; P2]
    
-    #u_max_11, u_max_12, u_max_13, u_max_14 = accel_bounds_1(Z.Xa, 
-    #                                                    Z.Xb, 
-    #                                                    3.0, 
-    #                                                    5.0, 
-    #                                                    3.0, 
-    #                                                    1.0) 
-    #u_max_21, u_max_22, u_max_23, u_max_24 = accel_bounds_2(Z.Xa, 
-    #                                                    Z.Xb, 
-    #                                                    3.0, 
-    #                                                    5.0, 
-    #                                                    3.0, 
-    #                                                    1.0) 
-    #g2val = g2([Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]; cd=probs.params.cd)
     gd = col(Z.Xa, Z.Xb, probs.params.r)
     h = responsibility(Z.Xa, Z.Xb)
     gd_both = [gd-l.(h) gd-l.(-h) gd]
-    (; P1, P2, gd_both, h, U1, U2)#, u_max_11, u_max_12, u_max_13, u_max_14, u_max_21, u_max_22, u_max_23, u_max_24)
+    (; P1, P2, gd_both, h, U1, U2)
 end
 
 function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
@@ -331,37 +317,54 @@ function visualize(probs, sim_results; save=false)
     lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
     lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
 
-    xa1 = Observable(sim_results[1].x0[1])
-    xa2 = Observable(sim_results[1].x0[2])
-    xb1 = Observable(sim_results[1].x0[5])
-    xb2 = Observable(sim_results[1].x0[6])
+    XA = Dict(t=>[Observable(0.0), Observable(0.0)] for t in 0:10)
+    XB = Dict(t=>[Observable(0.0), Observable(0.0)] for t in 0:10)
 
-    circ_x = [rad*cos(t) for t in 0:0.1:2π]
-    circ_y = [rad*sin(t) for t in 0:0.1:2π]
-    lines!(ax, @lift(circ_x .+ $xa1), @lift(circ_y .+ $xa2), color=:blue)
-    lines!(ax, @lift(circ_x .+ $xb1), @lift(circ_y .+ $xb2), color=:red)
+    circ_x = [rad*cos(t) for t in 0:0.1:(2π+0.1)]
+    circ_y = [rad*sin(t) for t in 0:0.1:(2π+0.1)]
+    lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=5)
+    lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=5)
+    for t in 1:10
+        lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
+        lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
+    end
     
     display(f)
-
     if save
-        record(f, "jockeying_animation.mp4", 2:T; framerate = 10) do t
-            xa1[] = sim_results[t].x0[1]
-            xa2[] = sim_results[t].x0[2]
-            xb1[] = sim_results[t].x0[5]
-            xb2[] = sim_results[t].x0[6]
+
+        record(f, "jockeying_animation.mp4", 1:T; framerate = 10) do t
+            XA[0][1][] = sim_results[t].x0[1]
+            XA[0][2][] = sim_results[t].x0[2]
+            XB[0][1][] = sim_results[t].x0[5]
+            XB[0][2][] = sim_results[t].x0[6]
+
+            for l in 1:10
+                XA[l][1][] = sim_results[t].P1[l,1]
+                XA[l][2][] = sim_results[t].P1[l,2]
+                XB[l][1][] = sim_results[t].P2[l,1]
+                XB[l][2][] = sim_results[t].P2[l,2]
+            end
+
             xlims!(ax, -2*lat, 2*lat)
             ylims!(ax, xb2[]-2*lat, xb2[]+2*lat)
         end
     else
 
 
-        for t in 2:T
-            xa1[] = sim_results[t].x0[1]
-            xa2[] = sim_results[t].x0[2]
-            xb1[] = sim_results[t].x0[5]
-            xb2[] = sim_results[t].x0[6]
+        for t in 1:T
+            XA[0][1][] = sim_results[t].x0[1]
+            XA[0][2][] = sim_results[t].x0[2]
+            XB[0][1][] = sim_results[t].x0[5]
+            XB[0][2][] = sim_results[t].x0[6]
+
+            for l in 1:10
+                XA[l][1][] = sim_results[t].P1[l,1]
+                XA[l][2][] = sim_results[t].P1[l,2]
+                XB[l][1][] = sim_results[t].P2[l,1]
+                XB[l][2][] = sim_results[t].P2[l,2]
+            end
             xlims!(ax, -2*lat, 2*lat)
-            ylims!(ax, xb2[]-2*lat, xb2[]+2*lat)
+            ylims!(ax, sim_results[t].x0[6]-2*lat, sim_results[t].x0[6]+2*lat)
             sleep(0.2)
         end
     end
