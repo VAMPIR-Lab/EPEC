@@ -316,11 +316,13 @@ function animate(probs, sim_results; save=false)
     if save
         record(f, "jockeying_animation.mp4", 1:T; framerate = 10) do t
             update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T = probs.params.T, lat = lat)
+            ax.title = string(t)
             sleep(0.2)
         end
     else
         for t in 1:T
             update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T = probs.params.T, lat = lat)
+            ax.title = string(t)
             sleep(0.2)
         end
     end
@@ -347,7 +349,7 @@ function visualize(probs)
         lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
         lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
     end
-
+    
     return (f, ax, XA, XB, lat)
 end
 
