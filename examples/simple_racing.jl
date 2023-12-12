@@ -244,13 +244,14 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; Δt, r, cd, lat_max, u_max_nominal, u_max_drafting))
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting))
 end
 
 function solve_seq(probs, x0)
     init = zeros(probs.gnep.top_level.n)
     X = init[probs.gnep.x_inds]
-    T = Int(length(X) / 12)
+    #T = Int(length(X) / 12)
+    T = probs.params.T
     Δt = probs.params.Δt
     cd = probs.params.cd
     Xa = []
@@ -273,14 +274,14 @@ function solve_seq(probs, x0)
     init = [init; x0]
 
     θg = solve(probs.gnep, init)
-    #θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-    #θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
-    #θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
-    #θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
-    #θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
-    #θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
-    #θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
-    #θ = solve(probs.bilevel, θb)
+    θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+    θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
+    θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
+    θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
+    θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
+    θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
+    θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
+    θ = solve(probs.bilevel, θb)
     #Z = probs.extract_bilevel(θ)
     Z = probs.extract_gnep(θg)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
@@ -307,13 +308,30 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
     results
 end
 
-function visualize(probs, sim_results; save=false)
+function animate(probs, sim_results; save=false)
+    (f, ax, XA, XB, lat) = visualize(probs);
+    display(f)
     T = length(sim_results)
+
+    if save
+        record(f, "jockeying_animation.mp4", 1:T; framerate = 10) do t
+            update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T = probs.params.T, lat = lat)
+            sleep(0.2)
+        end
+    else
+        for t in 1:T
+            update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T = probs.params.T, lat = lat)
+            sleep(0.2)
+        end
+    end
+end
+
+function visualize(probs)
     f = Figure(resolution = (1000, 1000))
     ax = Axis(f[1,1], aspect = DataAspect())
     rad = sqrt(probs.params.r) / 2
     lat = probs.params.lat_max + rad
-    lat = 5.0
+
     lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
     lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
 
@@ -324,49 +342,29 @@ function visualize(probs, sim_results; save=false)
     circ_y = [rad*sin(t) for t in 0:0.1:(2π+0.1)]
     lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=5)
     lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=5)
+
     for t in 1:10
         lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
         lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
     end
-    
-    display(f)
-    if save
 
-        record(f, "jockeying_animation.mp4", 1:T; framerate = 10) do t
-            XA[0][1][] = sim_results[t].x0[1]
-            XA[0][2][] = sim_results[t].x0[2]
-            XB[0][1][] = sim_results[t].x0[5]
-            XB[0][2][] = sim_results[t].x0[6]
+    return (f, ax, XA, XB, lat)
+end
 
-            for l in 1:10
-                XA[l][1][] = sim_results[t].P1[l,1]
-                XA[l][2][] = sim_results[t].P1[l,2]
-                XB[l][1][] = sim_results[t].P2[l,1]
-                XB[l][2][] = sim_results[t].P2[l,2]
-            end
+function update_visual!(ax, XA, XB, x0, P1, P2; T=10, lat=6.0)
+    XA[0][1][] = x0[1]
+    XA[0][2][] = x0[2]
+    XB[0][1][] = x0[5]
+    XB[0][2][] = x0[6]
 
-            xlims!(ax, -2*lat, 2*lat)
-            ylims!(ax, xb2[]-2*lat, xb2[]+2*lat)
-        end
-    else
-
-
-        for t in 1:T
-            XA[0][1][] = sim_results[t].x0[1]
-            XA[0][2][] = sim_results[t].x0[2]
-            XB[0][1][] = sim_results[t].x0[5]
-            XB[0][2][] = sim_results[t].x0[6]
-
-            for l in 1:10
-                XA[l][1][] = sim_results[t].P1[l,1]
-                XA[l][2][] = sim_results[t].P1[l,2]
-                XB[l][1][] = sim_results[t].P2[l,1]
-                XB[l][2][] = sim_results[t].P2[l,2]
-            end
-            xlims!(ax, -2*lat, 2*lat)
-            ylims!(ax, sim_results[t].x0[6]-2*lat, sim_results[t].x0[6]+2*lat)
-            sleep(0.2)
-        end
+    for l in 1:T
+        XA[l][1][] = P1[l,1]
+        XA[l][2][] = P1[l,2]
+        XB[l][1][] = P2[l,1]
+        XB[l][2][] = P2[l,2]
     end
+
+    xlims!(ax, -2*lat, 2*lat)
+    ylims!(ax, x0[6] - 2*lat, x0[6] + 2*lat)
 end
 
