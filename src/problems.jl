@@ -18,6 +18,13 @@ function Base.vcat(OPs::OptimizationProblem...)
     length(OPs) == 3 && error("L-level optimization problems are not supported for L > 2")
 end
 
+"""
+```
+MP1 -- ... -- MPn 
+```
+    GNEP: 
+    (n, 0) problems
+"""
 function Base.hcat(OPs::OptimizationProblem...)
     create_epec((length(OPs), 0), OPs...; use_z_slacks=false)
 end
@@ -48,7 +55,6 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     θ = θall[1:dim_total]
     # θ := [x₁ ... xₙ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
     w = θall[dim_total+1:end]
-
     #θ = Symbolics.@variables(θ[1:dim_total])[1] |> Symbolics.scalarize
     
     ind = 0
@@ -95,7 +101,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
 
     F = Num[grad_lags; cons_s; λs]
 
-    F! = Symbolics.build_function(F, θall; expression = Val(false))[2]
+    F! = Symbolics.build_function(F, θall; expression = Val(false))[2] # "[2]" for the in-place non-allocating mutating version
     J = Symbolics.sparsejacobian(F, z) 
     (J_rows, J_cols, J_vals) = findnz(J)
     J_vals! = Symbolics.build_function(J_vals, θall; expression = Val(false))[2]
@@ -199,7 +205,10 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
     converged = false
     while !converged
         iters += 1
-        (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
+        #if iters == 1
+            (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
+        #end
+
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
         errored = false
@@ -247,6 +256,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
         mcp.F!(result, θF)
         Cint(0)
     end
+
     function J(n, nnz, θ, col, len, row, data)
         @assert nnz == nnz_total == length(data) == length(row)
         data .= 0.0
@@ -284,12 +294,12 @@ function solve_top_level(mcp, bounds, θ; silent=true)
          l,
          u,
          x;
-         silent,
+         silent=false,
          nnz=nnz_total,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
-         cumulative_iteration_limit = 50_000,
-         convergence_tolerance=1e-8,
+         cumulative_iteration_limit = 100_000,
+         convergence_tolerance=1e-6,
      ) 
     
     #if status != PATHSolver.MCP_Solved && silent
@@ -298,7 +308,8 @@ function solve_top_level(mcp, bounds, θ; silent=true)
 
     if status != PATHSolver.MCP_Solved
         @infiltrate
-        error("Solver failure")
+        @info "Solver failure"
+        return
     end
 
     θF[1:n] .= θ_out
@@ -419,6 +430,8 @@ function get_local_solution_graph(mcp, θ; tol=1e-5)
         end
         J[i] = Ji
     end
+
+    #@infiltrate
     valid_solution = !any(isempty.(Ji for Ji in values(J)))
     !valid_solution && begin @infiltrate;  error("Not a valid solution!") end
     recipes = get_all_recipes(J)

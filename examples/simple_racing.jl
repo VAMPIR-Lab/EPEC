@@ -223,6 +223,8 @@ function setup(; T=10,
 
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
+    #@infiltrate
+    #epec = [OP1 OP2; OP1 OP2]
 
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
@@ -273,17 +275,22 @@ function solve_seq(probs, x0)
     init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
     init = [init; x0]
 
+    #@infiltrate
     θg = solve(probs.gnep, init)
     θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+    #@infiltrate
     θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
     θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
     θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
     θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
     θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
     θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
+
     θ = solve(probs.bilevel, θb)
-    #Z = probs.extract_bilevel(θ)
-    Z = probs.extract_gnep(θg)
+    #θ = solve(probs.bilevel, init)
+    Z = probs.extract_bilevel(θ)
+    #Z = probs.extract_gnep(θ)
+    #Z = probs.extract_gnep(θg)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
@@ -309,7 +316,9 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
 end
 
 function animate(probs, sim_results; save=false)
-    (f, ax, XA, XB, lat) = visualize(probs);
+    rad = sqrt(probs.params.r) / 2;
+    lat = probs.params.lat_max + rad;
+    (f, ax, XA, XB, lat) = visualize(; rad = rad, lat = lat);
     display(f)
     T = length(sim_results)
 
@@ -328,11 +337,9 @@ function animate(probs, sim_results; save=false)
     end
 end
 
-function visualize(probs)
+function visualize(; rad=.5, lat=6.0)
     f = Figure(resolution = (1000, 1000))
     ax = Axis(f[1,1], aspect = DataAspect())
-    rad = sqrt(probs.params.r) / 2
-    lat = probs.params.lat_max + rad
 
     lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
     lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
@@ -349,7 +356,7 @@ function visualize(probs)
         lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
         lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
     end
-    
+
     return (f, ax, XA, XB, lat)
 end
 
@@ -367,6 +374,31 @@ function update_visual!(ax, XA, XB, x0, P1, P2; T=10, lat=6.0)
     end
 
     xlims!(ax, -2*lat, 2*lat)
-    ylims!(ax, x0[6] - 2*lat, x0[6] + 2*lat)
+    ylims!(ax, x0[6] - lat, maximum([P1[T,2], P2[T,2]]) + lat)
 end
 
+function show_me(θ, x0; x_inds=1:120, T=10, t=0) 
+    function extract(θ; x_inds=x_inds, T=T)
+        Z = θ[x_inds]
+        @inbounds Xa = @view(Z[1:4*T])
+        @inbounds Ua = @view(Z[4*T+1:6*T])
+        @inbounds Xb = @view(Z[6*T+1:10*T])
+        @inbounds Ub = @view(Z[10*T+1:12*T])
+        (; Xa, Ua, Xb, Ub)
+    end
+    Z = extract(θ);
+
+    (f, ax, XA, XB, lat) = visualize(;lat = 1.5);
+    display(f);
+
+    P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]];
+    U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]];
+    P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]];
+    U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]];
+
+    update_visual!(ax, XA, XB, x0, P1, P2; T=T, lat=lat)
+
+    if t > 0 
+        ax.title = string(t)
+    end
+end
