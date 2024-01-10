@@ -2,7 +2,7 @@ using EPEC
 using GLMakie
 include("../examples/simple_racing.jl")
 
-probs = setup(; T=10, 
+probs = setup(; T=1, 
 	Δt = 0.1, 
 	r = 1.0, 
 	α1 = 1e-3,
@@ -87,17 +87,42 @@ x0 = [-0.013275642150166479
 #-0.4369283534763312
 #12.539518991822035]
 
+# fail 9 (bad initilization?):
+#x0 = [ -0.08320811747237386
+#10.724680707142564
+# 0.1876399601770615
+# 9.494661937893104
+#-0.8612120474445999
+#10.047477657701165
+#-0.7481148411504008
+#10.198952048696231]
+
+
 #x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7]
 #x0 = [0, 1, 0, 5, -1, 0, 0, 6]
 
 #x0 = [.75, 0, 0, 5.5, -.75, 0, 0, 5]
 
+# fail 10:
+x0 =  [-0.0019028890141220287
+13.65974905939654
+-0.6658240275991629
+10.073828363876014
+-0.9273635894353759
+13.268673804392947
+-1.0082598757848815
+10.895007101425024]
+
 (; P1, P2, gd_both, h, U1, U2) = solve_seq(probs, x0);
-show_me(safehouse.θ_out, safehouse.w)
+# in case exfiltrated:
+# before
+#show_me(safehouse.x, safehouse.w)
+# after
+show_me(safehouse.θ_out, safehouse.w; T=1)
 
 #(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
 #display(f)
 #update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
-#sim_results = solve_simulation(probs, 50; x0);
+#sim_results = solve_simulation(probs, 10; x0);
 #animate(probs, sim_results; save=false);
