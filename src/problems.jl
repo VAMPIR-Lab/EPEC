@@ -294,7 +294,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
          l,
          u,
          x;
-         silent=false,
+         silent,
          nnz=nnz_total,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
@@ -309,7 +309,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     if status != PATHSolver.MCP_Solved
         @infiltrate
         @info "Solver failure"
-        return
+        return # <- duh
     end
 
     θF[1:n] .= θ_out
@@ -365,7 +365,7 @@ function solve_low_level!(mcp, θ; silent=true)
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
          cumulative_iteration_limit = 50_000,
-         convergence_tolerance=1e-8,
+         convergence_tolerance=1e-6,
      ) 
 
     if status != PATHSolver.MCP_Solved && silent

@@ -9,6 +9,16 @@
 # Xb = [xb[1] | ... xb[T]] ∈ R^(2T)
 # Ub = [ub[1] | ... ub[T]] ∈ R^(2T)
 # z = [Xa | Ua | Xb | Ub | xa0 | xb0] ∈ R^(8T + 4)
+function view_z(z; xdim=2, udim=2)
+    T = Int((length(z) - 2 * xdim) / 2 * (xdim + udim))
+    @inbounds Xa = @view(z[1:xdim*T])
+    @inbounds Ua = @view(z[xdim*T+1:(xdim+udim)*T])
+    @inbounds Xb = @view(z[(xdim+udim)*T+1:(2*xdim+udim)*T])
+    @inbounds Ub = @view(z[(2*xdim+udim)*T+1:2*(xdim+udim)*T])
+    @inbounds x0a = @view(z[2*(xdim+udim)*T+1:2*(xdim+udim)*T+xdim])
+    @inbounds x0b = @view(z[2*(xdim+udim)*T+xdim+1:2*(xdim+udim)*T+2*xdim])
+    (; Xa, Ua, Xb, Ub, x0a, x0b)
+end
 
 # euler integration
 # x[k+1] = x[k] + Δt * u
@@ -50,12 +60,60 @@ function responsibility(Xa, Xb; xdim=2)
     end
 end
 
+function sigmoid(x, a, b)
+    xx = x * a + b
+    1.0 / (1.0 + exp(-xx))
+end
+
+# lower bound function -- above zero whenever h ≥ 0, below zero otherwise
+function l(h; a=5.0, b=4.5)
+    sigmoid(h, a, b) - sigmoid(0, a, b)
+end
+
+# P1 constraints: dynamics, collision, velocity
+function g1(z;
+    Δt=0.1,
+    r=1.0)
+    (; Xa, Ua, Xb, x0a) = view(z)
+
+    g_dyn = dyn(Xa, Ua, x0a, Δt)
+    g_col = col(Xa, Xb, r)
+    h_col = responsibility(Xa, Xb)
+
+    long_vel = @view(Ua[2:2:end])
+    lat_vel = @view(Ua[1:2:end])
+    lat_pos = @view(Xa[1:4:end])
+
+    [g_dyn
+        g_col - l.(h_col)
+        lat_vel
+        long_vel
+        lat_pos]
+end
+
+function g2(z;
+    Δt=0.1,
+    r=1.0)
+    (; Xa, Xb, Ub, x0b) = view(z)
+
+    g_dyn = dyn(Xb, Ub, x0b, Δt)
+    g_col = col(Xa, Xb, r)
+    h_col = -responsibility(Xa, Xb)
+
+    long_vel = @view(Ub[2:2:end])
+    lat_vel = @view(Ub[1:2:end])
+    lat_pos = @view(Xb[1:4:end])
+
+    [g_dyn
+        g_col - l.(h_col)
+        lat_vel
+        long_vel
+        lat_pos]
+end
+
 # P1 wants to maximize lead wrt to P2 at the end of the horizon, minimize offset from the centerline and effort 
-function f1(z; α1=1.0, α2=0.0, β=1.0, xdim=2, udim=2)
-    T = Int((length(z) - 2 * xdim) / 2 * (xdim + udim))
-    @inbounds Xa = @view(z[1:xdim*T])
-    @inbounds Ua = @view(z[xdim*T+1:(xdim+udim)*T])
-    @inbounds Xb = @view(z[(xdim+udim)*T+1:(2*xdim+udim)*T])
+function f1(z; α1=1.0, α2=0.0, β=1.0)
+    (; Xa, Ua, Xb) = view_z(z)
     running_cost = 0.0
 
     for t in 1:T
@@ -69,12 +127,7 @@ end
 
 # P2 wants to maximize lead wrt to P1 at the end of the horizon, minimize offset from the centerline and effort 
 function f2(z; α1=1.0, α2=0.0, β=1.0)
-    xdim = 2
-    udim = 2
-    T = Int((length(z) - 2 * xdim) / 2 * (xdim + udim))
-    @inbounds Xa = @view(z[1:xdim*T])
-    @inbounds Xb = @view(z[(xdim+udim)*T+1:(2*xdim+udim)*T])
-    @inbounds Ub = @view(z[(2*xdim+udim)*T+1:2*(xdim+udim)*T])
+    (; Xa, Xb, Ub) = view_z(z)
     running_cost = 0.0
 
     for t in 1:T
@@ -84,4 +137,49 @@ function f2(z; α1=1.0, α2=0.0, β=1.0)
     end
     terminal_cost = β * (Xa[xdim*T] - Xb[xdim*T])
     cost = running_cost + terminal_cost
+end
+
+function setup(; T=10,
+    Δt=0.1,
+    r=1.0,
+    α1=0.01,
+    α2=0.001,
+    β=1.0,
+    v_max=1.0,
+    lat_max=5.0)
+
+    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-v_max, T); fill(-v_max, T); fill(-lat_max, T)]
+    ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+v_max, T); fill(+v_max, T); fill(+lat_max, T)]
+
+    f1_pinned = (z -> f1(z; α1, α2, β))
+    f2_pinned = (z -> f2(z; α1, α2, β))
+    g1_pinned = (z -> g1(z, Δt, r))
+    g2_pinned = (z -> g2(z, Δt, r))
+
+    OP1 = OptimizationProblem(2 * (xdim + udim) * T + 2*xdim, 1:6*T, f1_pinned, g1_pinned, lb, ub)
+    OP2 = OptimizationProblem(2 * (xdim + udim) * T + 2*xdim, 1:6*T, f2_pinned, g2_pinned, lb, ub)
+
+    gnep = [OP1 OP2]
+    bilevel = [OP1; OP2]
+
+    function view_z(z; xdim=2, udim=2)
+        T = Int((length(z) - 2 * xdim) / 2 * (xdim + udim))
+        @inbounds Xa = @view(z[1:xdim*T])
+        @inbounds Ua = @view(z[xdim*T+1:(xdim+udim)*T])
+        @inbounds Xb = @view(z[(xdim+udim)*T+1:(2*xdim+udim)*T])
+        @inbounds Ub = @view(z[(2*xdim+udim)*T+1:2*(xdim+udim)*T])
+        @inbounds x0a = @view(z[2*(xdim+udim)*T+1:2*(xdim+udim)*T+xdim])
+        @inbounds x0b = @view(z[2*(xdim+udim)*T+xdim+1:2*(xdim+udim)*T+2*xdim])
+        (; Xa, Ua, Xb, Ub, x0a, x0b)
+    end
+    function extract_gnep(θ)
+        z = θ[gnep.x_inds]
+        (; Xa, Ua, Xb, Ub, x0a, x0b) = view_z(z)
+    end
+
+    function extract_bilevel(θ)
+        z = θ[bilevel.x_inds]
+        (; Xa, Ua, Xb, Ub, x0a, x0b) = view_z(z)
+    end
+    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r))
 end

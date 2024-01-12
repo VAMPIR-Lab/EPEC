@@ -17,7 +17,7 @@ function f1(Z; α1 = 1.0, α2 = 0.0)
         @inbounds ut = @view(Ua[(t-1)*2+1:t*2]) 
         cost += xbt[2]-2*xat[2] + α1*xat[1]^2 + α2 * ut'*ut
     end
-    cost
+    cost/1e4
 end
 
 # P2 wants to make forward progress and stay in center of lane.
@@ -35,7 +35,7 @@ function f2(Z; α1 = 1.0, α2 = 0.0)
         @inbounds ut = @view(Ub[(t-1)*2+1:t*2]) 
         cost += xat[2]-2*xbt[2] + α1*xbt[1]^2 + α2 * ut'*ut
     end
-    cost
+    cost/1e4
 end
 
 function pointmass(x, u, Δt, cd)
@@ -275,10 +275,10 @@ function solve_seq(probs, x0)
     init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
     init = [init; x0]
 
+    #show_me(init, x0; x_inds=1:120, T=T, t=0) 
     #@infiltrate
     θg = solve(probs.gnep, init)
     θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-    #@infiltrate
     θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
     θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
     θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
@@ -378,6 +378,7 @@ function update_visual!(ax, XA, XB, x0, P1, P2; T=10, lat=6.0)
 end
 
 function show_me(θ, x0; x_inds=1:120, T=10, t=0) 
+    x_inds=1:12*T
     function extract(θ; x_inds=x_inds, T=T)
         Z = θ[x_inds]
         @inbounds Xa = @view(Z[1:4*T])
