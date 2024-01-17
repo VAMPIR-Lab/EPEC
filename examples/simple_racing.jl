@@ -17,7 +17,7 @@ function f1(Z; α1 = 1.0, α2 = 0.0)
         @inbounds ut = @view(Ua[(t-1)*2+1:t*2]) 
         cost += xbt[2]-2*xat[2] + α1*xat[1]^2 + α2 * ut'*ut
     end
-    cost/1e4
+    cost
 end
 
 # P2 wants to make forward progress and stay in center of lane.
@@ -35,7 +35,7 @@ function f2(Z; α1 = 1.0, α2 = 0.0)
         @inbounds ut = @view(Ub[(t-1)*2+1:t*2]) 
         cost += xat[2]-2*xbt[2] + α1*xbt[1]^2 + α2 * ut'*ut
     end
-    cost/1e4
+    cost
 end
 
 function pointmass(x, u, Δt, cd)
@@ -210,8 +210,8 @@ function setup(; T=10,
                  box_width=1.0,
                  lat_max = 5.0)
 
-    lb = [fill(0.0, 4*T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4*T); fill(-lat_max, T)]
-    ub = [fill(0.0, 4*T); fill(Inf, T); fill(+u_max_nominal, T); fill( 0.0, 4*T); fill(+lat_max, T)]
+    lb = [fill(-0.1, 4*T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4*T); fill(-lat_max, T)]
+    ub = [fill(0.1, 4*T); fill(Inf, T); fill(+u_max_nominal, T); fill( 0.0, 4*T); fill(+lat_max, T)]
 
     f1_pinned = (z -> f1(z; α1, α2))
     f2_pinned = (z -> f2(z; α1, α2))

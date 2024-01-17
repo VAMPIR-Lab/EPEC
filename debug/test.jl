@@ -2,7 +2,7 @@ using EPEC
 using GLMakie
 include("../examples/simple_racing.jl")
 
-probs = setup(; T=1, 
+probs = setup(; T=10, 
 	Δt = 0.1, 
 	r = 1.0, 
 	α1 = 1e-3,
@@ -116,11 +116,11 @@ x0 =  [-0.0019028890141220287
 # before
 #show_me(safehouse.x, safehouse.w)
 # after
-show_me(safehouse.θ_out, safehouse.w; T=1)
+show_me(safehouse.θ_out, safehouse.w; T=10)
 
-#(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
-#display(f)
-#update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
+(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
+display(f)
+update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
-#sim_results = solve_simulation(probs, 7; x0);
-#animate(probs, sim_results; save=false);
+sim_results = solve_simulation(probs, 10; x0);
+animate(probs, sim_results; save=false);
