@@ -124,7 +124,7 @@ function g2(z;
     [g_dyn
         g_col - l.(h_col)
         lat_vel
-        long_vel .- 1.0
+        long_vel .- 10.0
         lat_pos]
 end
 
@@ -136,7 +136,7 @@ function f1(z; α1=1.0, α2=0.0, β=1.0)
     for t in 1:T
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
         @inbounds ua = @view(Ua[udim*(t-1)+1:udim*t])
-        running_cost += xa[1]^2 + α2 * ua' * ua
+        running_cost += α1 * xa[1]^2 + α2 * ua' * ua
     end
     terminal_cost = β * (Xb[xdim*T] - 2 * Xa[xdim*T])
     cost = running_cost + terminal_cost
@@ -156,7 +156,7 @@ function f2(z; α1=1.0, α2=0.0, β=1.0)
     cost = running_cost + terminal_cost
 end
 
-function setup_probs(; T=10,
+function setup(; T=10,
     Δt=0.1,
     r=1.0,
     α1=1e-2,
@@ -358,28 +358,28 @@ function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
     end
 end
 
-function setup(;
-    x0=[0.0; 2.0; 0.0; 0.0],
-    sim_steps=50,
-    T=10,
-    Δt=0.1,
-    r=1.0,
-    α1=1e-2,
-    α2=0e0,
-    β=1e1,
-    lat_vel_max=1.0,
-    long_vel_max=10.0,
-    lat_pos_max=1.0
-)
-    probs = setup_probs(;T=T);
-    #(; P1, P2, gd_both, h, U1, U2) = simplest_racing.solve_seq(probs, x0);
-    # in case exfiltrated:
-    # before x0
-    #show_me(safehouse.x, safehouse.w)
-    # after
-    #simplest_racing.show_me(safehouse.θ_out, safehouse.w; T=10)
+#function setup(;
+#    x0=[0.0; 2.0; 0.0; 0.0],
+#    sim_steps=50,
+#    T=10,
+#    Δt=0.1,
+#    r=1.0,
+#    α1=1e-2,
+#    α2=0e0,
+#    β=1e1,
+#    lat_vel_max=1.0,
+#    long_vel_max=10.0,
+#    lat_pos_max=1.0
+#)
+#    probs = setup_probs(;T=T);
+#    #(; P1, P2, gd_both, h, U1, U2) = simplest_racing.solve_seq(probs, x0);
+#    # in case exfiltrated:
+#    # before x0
+#    #show_me(safehouse.x, safehouse.w)
+#    # after
+#    #simplest_racing.show_me(safehouse.θ_out, safehouse.w; T=10)
 
-    sim_results = solve_simulation(probs, sim_steps; x0);
-    animate(probs, sim_results; save=false);
-end
+#    sim_results = solve_simulation(probs, sim_steps; x0);
+#    animate(probs, sim_results; save=false);
+#end
 end
