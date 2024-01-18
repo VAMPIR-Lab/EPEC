@@ -309,7 +309,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     if status != PATHSolver.MCP_Solved
         @infiltrate
         @info "Solver failure"
-        return # <- duh
+        #return # <- duh
     end
 
     θF[1:n] .= θ_out

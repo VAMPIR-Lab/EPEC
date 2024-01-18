@@ -14,6 +14,7 @@ probs = setup(; T=10,
 	box_width = 1.0,
 	lat_max = 1.0);
 
+
 # fail 1:
 #x0 = [0.024854049940194006
 #2.0390008441072673
@@ -113,7 +114,7 @@ x0 =  [-0.0019028890141220287
 
 (; P1, P2, gd_both, h, U1, U2) = solve_seq(probs, x0);
 # in case exfiltrated:
-# before
+# beforex0
 #show_me(safehouse.x, safehouse.w)
 # after
 show_me(safehouse.θ_out, safehouse.w; T=10)
@@ -122,5 +123,5 @@ show_me(safehouse.θ_out, safehouse.w; T=10)
 display(f)
 update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
-sim_results = solve_simulation(probs, 10; x0);
+sim_results = solve_simulation(probs, 50; x0);
 animate(probs, sim_results; save=false);
