@@ -124,7 +124,7 @@ function g2(z;
     [g_dyn
         g_col - l.(h_col)
         lat_vel
-        long_vel .- 10.0
+        long_vel .- 2.0
         lat_pos]
 end
 

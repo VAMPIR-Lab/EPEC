@@ -119,9 +119,9 @@ x0 =  [-0.0019028890141220287
 # after
 show_me(safehouse.θ_out, safehouse.w; T=10)
 
-(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
-display(f)
-update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
+#(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
+#display(f)
+#update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
 sim_results = solve_simulation(probs, 50; x0);
 animate(probs, sim_results; save=false);
