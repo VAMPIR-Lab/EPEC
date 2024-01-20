@@ -197,7 +197,7 @@ function solve(epec; tol=1e-6)
     solve(epec, zeros(epec.top_level.n); tol)
 end
 
-function solve(epec, θ; tol=1e-6, max_iters=30)
+function solve(epec, θ; tol=1e-3, max_iters=30)
     low_level = epec.low_level
     top_level = epec.top_level
 
@@ -299,7 +299,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
          cumulative_iteration_limit = 100_000,
-         convergence_tolerance=1e-6,
+         convergence_tolerance=1e-7,
      ) 
     
     #if status != PATHSolver.MCP_Solved && silent
@@ -307,10 +307,39 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     #end
 
     if status != PATHSolver.MCP_Solved
-        @infiltrate
-        @info "Solver failure"
-        return # <- duh
+        if status == PATHSolver.MCP_NoProgress && info.residual < 1e-4
+            # continue
+        else 
+            @infiltrate
+            #@info "Solver failure"
+            error("Top-level Solver failure")
+        end
+        #@infiltrate
+        #@info "Solver failure"
+        #return # <- duh
     end
+
+    #attempts = 0
+
+    #while status != PATHSolver.MCP_Solved
+    #    @info "Solver failure $attempts"
+    #    x .+= (rand(Float64, n).-.5)*1e-2
+    #    #@infiltrate
+    #    status, θ_out, info = PATHSolver.solve_mcp(
+    #        F,
+    #        J,
+    #        l,
+    #        u,
+    #        x;
+    #        silent,
+    #        nnz=nnz_total,
+    #    ) 
+    #    attempts += 1
+    #    if attempts > 100
+    #        @infiltrate
+    #        return
+    #    end
+    #end   
 
     θF[1:n] .= θ_out
 
@@ -403,7 +432,7 @@ function check_mcp_sol(f, z, l, u; tol=1e-4)
     return sol
 end
 
-function get_local_solution_graph(mcp, θ; tol=1e-5)
+function get_local_solution_graph(mcp, θ; tol=1e-4)
     l = mcp.l  
     u = mcp.u
     n = length(l)

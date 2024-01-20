@@ -304,20 +304,23 @@ function solve_seq(probs, x0)
 
     #show_me(init, x0; x_inds=1:120, T=T, t=0) 
     #@infiltrate
+    @info "Solving gnep.."
     θg = solve(probs.gnep, init)
-    θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-    θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
-    θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
-    θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
-    θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
-    θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
-    θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
+    #θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+    #θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
+    #θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
+    #θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
+    #θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
+    #θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
+    #θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
 
-    θ = solve(probs.bilevel, θb)
+    
+    #@info "Solving bilevel.."
+    #@info probs.bilevel.inds["λ", 1]
+    #θ = solve(probs.bilevel, θb)
     #θ = solve(probs.bilevel, init)
-    Z = probs.extract_bilevel(θ)
-    #Z = probs.extract_gnep(θ)
-    #Z = probs.extract_gnep(θg)
+    #Z = probs.extract_bilevel(θ)
+    Z = probs.extract_gnep(θg)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
@@ -415,7 +418,7 @@ function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
     end
     Z = extract(θ)
 
-    (f, ax, XA, XB, lat) = visualize(; lat=1.5)
+    (f, ax, XA, XB, lat) = visualize(; lat=lat_pos_max)
     display(f)
 
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]

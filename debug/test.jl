@@ -5,10 +5,11 @@ include("../examples/simple_racing.jl")
 probs = setup(; T=10, 
 	Δt = 0.1, 
 	r = 1.0, 
-	α1 = 1e-3,
-	α2 = 0e0,
+	α1 = 1e-5,
+	α2 = 1e-3,
+	β = 1e-2,
 	cd = 0.01,
-	u_max_nominal = 2.0, 
+	u_max_nominal = 1.0, 
 	u_max_drafting = 5.0,
 	box_length = 5.0,
 	box_width = 1.0,
@@ -99,14 +100,23 @@ probs = setup(; T=10,
 #10.198952048696231]
 
 # fail 10:
-x0 =  [-0.0019028890141220287
-13.65974905939654
--0.6658240275991629
-10.073828363876014
--0.9273635894353759
-13.268673804392947
--1.0082598757848815
-10.895007101425024]
+#x0 =  [-0.0019028890141220287
+#13.65974905939654
+#-0.6658240275991629
+#10.073828363876014
+#-0.9273635894353759
+#13.268673804392947
+#-1.0082598757848815
+#10.895007101425024]
+
+x0 = [  0.01404829205082451
+18.110458221465397
+-0.6647503130628686
+10.1594233108483
+-0.9826910471470179
+18.005774349042
+-1.0056947045106504
+10.732187582960456]
 
 #x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7]
 #x0 = [0, 1, 0, 5, -1, 0, 0, 6]
@@ -117,11 +127,11 @@ x0 =  [-0.0019028890141220287
 # beforex0
 #show_me(safehouse.x, safehouse.w)
 # after
-show_me(safehouse.θ_out, safehouse.w; T=10)
+#show_me(safehouse.θ_out, safehouse.w; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
-#(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
-#display(f)
-#update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
+(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
+display(f)
+update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
-sim_results = solve_simulation(probs, 50; x0);
+sim_results = solve_simulation(probs, 100; x0);
 animate(probs, sim_results; save=false);
