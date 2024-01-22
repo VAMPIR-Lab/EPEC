@@ -40,6 +40,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
 
     dim_z_low = sum(n_privates[i] + 2m_privates[i] for i in N1+1:N1+N2; init=0)
     dim_total = sum(n_privates[i] + 2m_privates[i] + 4 * dim_z_low for i in 1:N1; init=0)
+
     # Each top-level player: privates + duals on private cons + slacks on
     # private cons + slacks on z cons + duals on z cons + duals on z agreement
     # + copy of z
@@ -57,7 +58,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
 
     for (key_base, len_itr) in zip(["x", "z", "λ", "s", "ψ", "r", "γ"],
         [n_privates, dim_z_low, m_privates, m_privates, dim_z_low, dim_z_low, dim_z_low])
-        lens = length(len_itr) == 1 ? fill(len_itr, N1) : len_itr
+        lens = length(len_itr) == 1 ? fill(len_itr[1], N1) : len_itr
         for i in 1:N1
             len = lens[i]
             vars[key_base, i] = θ[ind+1:ind+len]
@@ -168,6 +169,13 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
         local_inds
     end
 
+    f_dict = Dict()
+    idx = 0
+    for (item, ame) in zip([grad_lags_x, grad_lags_z, cons_s_top, λs_top, cons_r, ψs, cons_z], ["grad_lags_x", "grad_lags_z", "cons_s_top", "λs_top", "cons_r", "ψs", "cons_z"])
+        f_dict[ame] = (idx+1):(idx+length(item))
+        idx += length(item)
+    end 
+
     Ftotal! = Symbolics.build_function(Ftotal, θall; expression=Val(false))[2]
     Jtotal = Symbolics.sparsejacobian(Ftotal, θ)
     (Jtotal_rows, Jtotal_cols, Jtotal_vals) = findnz(Jtotal)
@@ -184,7 +192,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
         n=length(ltotal),
         n_param)
 
-    (; low_level, top_level, x_inds, inds)
+    (; low_level, top_level, x_inds, inds, f_dict)
 end
 
 function solve(epec; tol=1e-6)
@@ -207,7 +215,7 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
             #try
-            (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
+            (; dθ, status, info) = solve_top_level(top_level, bounds, θ, epec.x_inds, epec.inds, epec.f_dict)
             if iters > max_iters
                 @infiltrate
                 return
@@ -229,7 +237,7 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
     return θ
 end
 
-function solve_top_level(mcp, bounds, θ; silent=true)
+function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
     n = mcp.n
     nnz_total = length(mcp.J_rows)
     J_shape = sparse(mcp.J_rows, mcp.J_cols, ones(Cdouble, nnz_total), n, n)
@@ -241,8 +249,11 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     @assert length(J_row) == nnz_total
 
     θF = copy(θ)
-    x = θ[1:n] # WARNING assumes that first n elements are non-parameter values.
-    w = θ[n+1:end]
+    #x = θ[1:n] # WARNING assumes that first n elements are non-parameter values.
+    #w = θ[n+1:end]
+    x = θ[1:inds["w", 0][1] - 1]
+    w = θ[inds["w", 0]]
+    #@infiltrate
 
     function F(n, θ, result)
         result .= 0.0
@@ -300,8 +311,12 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     #end
 
     if status != PATHSolver.MCP_Solved
-        @infiltrate
-        error("Solver failure")
+        if status == PATHSolver.MCP_NoProgress && info.residual < 1e-4
+            # continue
+        else 
+            @infiltrate
+            error("Top-level Solver failure")
+        end
     end
 
     θF[1:n] .= θ_out
