@@ -230,8 +230,8 @@ function setup(; T=10,
     OP1 = OptimizationProblem(12 * T + 8, 1:6*T, f1_pinned, g1_pinned, lb, ub)
     OP2 = OptimizationProblem(12 * T + 8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
 
-	#sp_a = [OP1]
-	#sp_b = [OP2]
+	sp_a = EPEC.create_epec((1,0), OP1)
+	sp_b = EPEC.create_epec((1,0), OP2)
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
     #@infiltrate
@@ -257,7 +257,7 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting))
+    problems = (; sp_a, sp_b, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting))
 end
 
 function solve_seq(probs, x0)
@@ -285,12 +285,15 @@ function solve_seq(probs, x0)
     end
     init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
     
-    #@infiltrate
-    #show_me(init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-    #return
+	#@infiltrate
+	#show_me(init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
-    init = [init; x0]    
+	init = [init; x0]    
 
+	@info "Solving singleplayer: a"
+	θ_sp_a =  solve(probs.sp_a, init)
+	#show_me([safehouse.θ_out; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+	
     @info "Solving gnep.."
     θg = solve(probs.gnep, init)
     #@infiltrate
@@ -307,7 +310,7 @@ function solve_seq(probs, x0)
     @info "Solving bilevel.."
     #@info probs.bilevel.inds["λ", 1]
     θ = solve(probs.bilevel, θb)
-    @infiltrate
+    #@infiltrate
     #θ = solve(probs.bilevel, init)
     Z = probs.extract_bilevel(θ)
     #Z = probs.extract_gnep(θg)
