@@ -15,6 +15,8 @@ probs = setup(; T=10,
 	box_width = 1.0,
 	lat_max = 1.0);
 
+x0 = [1, 1, 0, 1, -1, 0, 0, 1]
+	
 
 # fail 1:
 #x0 = [0.024854049940194006
@@ -31,7 +33,7 @@ probs = setup(; T=10,
 #2.405885659000482
 #-0.7988008366961059
 #5.778990383057139
-#-0.73723565kee56277414
+#-0.7372356556277414
 #2.1558857008413876
 #-0.190253823106046
 #5.778990405973726]
@@ -109,14 +111,14 @@ probs = setup(; T=10,
 #-1.0082598757848815
 #10.895007101425024]
 
-x0 = [  0.01404829205082451
-18.110458221465397
--0.6647503130628686
-10.1594233108483
--0.9826910471470179
-18.005774349042
--1.0056947045106504
-10.732187582960456]
+#x0 = [  0.01404829205082451
+#18.110458221465397
+#-0.6647503130628686
+#10.1594233108483
+#-0.9826910471470179
+#18.005774349042
+#-1.0056947045106504
+#10.732187582960456]
 
 #x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7]
 #x0 = [0, 1, 0, 5, -1, 0, 0, 6]
@@ -124,14 +126,14 @@ x0 = [  0.01404829205082451
 
 (; P1, P2, gd_both, h, U1, U2) = solve_seq(probs, x0);
 # in case exfiltrated:
-# beforex0
+# before x0
 #show_me(safehouse.x, safehouse.w)
 # after
 #show_me(safehouse.θ_out, safehouse.w; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
-(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
-display(f)
-update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
+#(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
+#display(f)
+#update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
-sim_results = solve_simulation(probs, 100; x0);
-animate(probs, sim_results; save=false);
+#sim_results = solve_simulation(probs, 100; x0);
+#animate(probs, sim_results; save=false);

@@ -61,6 +61,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     vars = Dict()
     inds = Dict()
 
+    #@infiltrate
     for (key_base, len_itr) in zip(["x", "z", "λ", "s", "ψ", "r", "γ"], 
                                    [n_privates, dim_z_low, m_privates, m_privates, dim_z_low, dim_z_low, dim_z_low])
         lens = length(len_itr) == 1 ? fill(len_itr, N1) : len_itr
@@ -216,7 +217,7 @@ function solve(epec, θ; tol=1e-3, max_iters=30)
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
             #try
-                (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
+                (; dθ, status, info) = solve_top_level(top_level, bounds, θ, epec.x_inds, epec.inds)
             @infiltrate iters > max_iters
                 if (norm(dθ) > tol)
                     converged = false
@@ -235,7 +236,7 @@ function solve(epec, θ; tol=1e-3, max_iters=30)
     return θ
 end
 
-function solve_top_level(mcp, bounds, θ; silent=true)
+function solve_top_level(mcp, bounds, θ, x_inds, inds; silent=true)
     n = mcp.n
     nnz_total = length(mcp.J_rows)
     J_shape = sparse(mcp.J_rows, mcp.J_cols, ones(Cdouble, nnz_total), n, n)
@@ -408,6 +409,29 @@ function solve_low_level!(mcp, θ; silent=true)
     (; status, info)
 end
 
+function check_mcp_fail(f, z, l, u; tol=1e-4)
+    n = length(f)
+    fails = falses(n)
+    for i in 1:n
+        if isapprox(l[i], u[i]; atol=tol)
+            continue
+        elseif f[i] ≥ tol && z[i] < l[i]+tol
+            continue
+        elseif -tol < f[i] < tol && z[i] < l[i]+tol
+            continue
+        elseif -tol < f[i] < tol && l[i]+tol ≤ z[i] ≤ u[i]-tol
+            continue
+        elseif -tol < f[i] < tol && z[i] > u[i]-tol
+            continue
+        elseif f[i] ≤ -tol && z[i] > u[i]-tol
+            continue
+        else
+            fails[i] = true
+        end
+    end
+    return fails
+end
+
 function check_mcp_sol(f, z, l, u; tol=1e-4)
     n = length(f)
     sol = true
@@ -442,7 +466,7 @@ function get_local_solution_graph(mcp, θ; tol=1e-4)
     J = Dict{Int, Vector{Int}}()
     for i in 1:n
         Ji = Int[]
-        if isapprox(l[i], u[i]; atol=2*tol)
+        if isapprox(l[i], u[i]; atol=2*tol) # why 2*tol?
             push!(Ji, 4)
         elseif f[i] ≥ tol && z[i] < l[i]+tol
             push!(Ji, 1)

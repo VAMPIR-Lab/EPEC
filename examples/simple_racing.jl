@@ -23,15 +23,6 @@ function f1(Z; α1=1.0, α2=0.0, β=1.0)
     @inbounds xb = @view(Xb[xdim*(T-1)+1:xdim*T])
     terminal_cost = β * (xb[2] - 2 * xa[2])
     cost = running_cost + terminal_cost
-
-    #cost = 0.0
-    #for t in 1:T
-    #    @inbounds xat = @view(Xa[(t-1)*4+1:t*4])
-    #    @inbounds xbt = @view(Xb[(t-1)*4+1:t*4])
-    #    @inbounds ut = @view(Ua[(t-1)*2+1:t*2]) 
-    #    cost += xbt[2]-2*xat[2] + α1*xat[1]^2 + α2 * ut'*ut
-    #end
-    #cost
 end
 
 # P2 wants to make forward progress and stay in center of lane.
@@ -53,15 +44,6 @@ function f2(Z; α1=1.0, α2=0.0, β=1.0)
     @inbounds xb = @view(Xb[xdim*(T-1)+1:xdim*T])
     terminal_cost = β * (xa[2] - 2 * xb[2])
     cost = running_cost + terminal_cost
-
-    #cost = 0.0
-    #for t in 1:T
-    #    @inbounds xat = @view(Xa[(t-1)*4+1:t*4])
-    #    @inbounds xbt = @view(Xb[(t-1)*4+1:t*4])
-    #    @inbounds ut = @view(Ub[(t-1)*2+1:t*2])
-    #    cost += xat[2] - 2 * xbt[2] + α1 * xbt[1]^2 + α2 * ut' * ut
-    #end
-    #cost
 end
 
 function pointmass(x, u, Δt, cd)
@@ -237,8 +219,8 @@ function setup(; T=10,
     box_width=1.0,
     lat_max=5.0)
 
-    lb = [fill(-0.1, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-lat_max, T)]
-    ub = [fill(0.1, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(+lat_max, T)]
+    lb = [fill(0., 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-lat_max, T)]
+    ub = [fill(0., 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(+lat_max, T)]
 
     f1_pinned = (z -> f1(z; α1, α2, β))
     f2_pinned = (z -> f2(z; α1, α2, β))
@@ -300,27 +282,33 @@ function solve_seq(probs, x0)
         append!(Xb, xb)
     end
     init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-    init = [init; x0]
-
-    #show_me(init, x0; x_inds=1:120, T=T, t=0) 
+    
     #@infiltrate
+    #show_me(init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+    #return
+
+    init = [init; x0]    
+
     @info "Solving gnep.."
     θg = solve(probs.gnep, init)
-    #θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-    #θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
-    #θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
-    #θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
-    #θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
-    #θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
-    #θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
+    @infiltrate
+
+    θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+    θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
+    θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
+    θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
+    θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
+    θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
+    θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
 
     
-    #@info "Solving bilevel.."
+    @info "Solving bilevel.."
     #@info probs.bilevel.inds["λ", 1]
-    #θ = solve(probs.bilevel, θb)
+    θ = solve(probs.bilevel, θb)
+    @infiltrate
     #θ = solve(probs.bilevel, init)
-    #Z = probs.extract_bilevel(θ)
-    Z = probs.extract_gnep(θg)
+    Z = probs.extract_bilevel(θ)
+    #Z = probs.extract_gnep(θg)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
