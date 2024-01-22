@@ -13,8 +13,8 @@ end
 
 function Base.vcat(OPs::OptimizationProblem...)
     length(OPs) == 0 && error("Can't create equilibrium problem from no optimization problems")
-    length(OPs) == 1 && return create_epec((1,0), OPs...; use_z_slacks=false)
-    length(OPs) == 2 && return create_epec((1,1), OPs...; use_z_slacks=false)
+    length(OPs) == 1 && return create_epec((1, 0), OPs...; use_z_slacks=false)
+    length(OPs) == 2 && return create_epec((1, 1), OPs...; use_z_slacks=false)
     length(OPs) == 3 && error("L-level optimization problems are not supported for L > 2")
 end
 
@@ -27,42 +27,42 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     @assert allequal(OP.n for OP in OPs)
     N1, N2 = players_per_row
     N = N1 + N2
-    @assert N1+N2 == length(OPs)
-    
+    @assert N1 + N2 == length(OPs)
+
     n = first(OPs).n
 
     top_OPs = OPs[1:N1]
     bot_OPs = OPs[N1+1:end]
-    
+
     n_privates = [length(OP.dvars) for OP in OPs]
     m_privates = [length(OP.l) for OP in OPs]
     n_param = n - sum(n_privates)
-    
-    dim_z_low = sum(n_privates[i]+2m_privates[i] for i in N1+1:N1+N2; init=0)
-    dim_total = sum(n_privates[i]+2m_privates[i]+4*dim_z_low for i in 1:N1; init=0)
+
+    dim_z_low = sum(n_privates[i] + 2m_privates[i] for i in N1+1:N1+N2; init=0)
+    dim_total = sum(n_privates[i] + 2m_privates[i] + 4 * dim_z_low for i in 1:N1; init=0)
     # Each top-level player: privates + duals on private cons + slacks on
     # private cons + slacks on z cons + duals on z cons + duals on z agreement
     # + copy of z
-    
+
     θall = Symbolics.@variables(θ[1:dim_total+n_param])[1] |> Symbolics.scalarize
     θ = θall[1:dim_total]
     # θ := [x₁ ... xₙ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
     w = θall[dim_total+1:end]
 
     #θ = Symbolics.@variables(θ[1:dim_total])[1] |> Symbolics.scalarize
-    
+
     ind = 0
     vars = Dict()
     inds = Dict()
 
-    for (key_base, len_itr) in zip(["x", "z", "λ", "s", "ψ", "r", "γ"], 
-                                   [n_privates, dim_z_low, m_privates, m_privates, dim_z_low, dim_z_low, dim_z_low])
+    for (key_base, len_itr) in zip(["x", "z", "λ", "s", "ψ", "r", "γ"],
+        [n_privates, dim_z_low, m_privates, m_privates, dim_z_low, dim_z_low, dim_z_low])
         lens = length(len_itr) == 1 ? fill(len_itr, N1) : len_itr
         for i in 1:N1
             len = lens[i]
             vars[key_base, i] = θ[ind+1:ind+len]
             inds[key_base, i] = ind+1:ind+len
-            ind+=len
+            ind += len
         end
     end
 
@@ -78,79 +78,79 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     end
     inds["w", 0] = dim_total+1:dim_total+n_param
 
-    x = vcat((vars["x",i] for i in 1:N1+N2)...)
-    x_inds = vcat((inds["x",i] for i in 1:N1+N2)...)
+    x = vcat((vars["x", i] for i in 1:N1+N2)...)
+    x_inds = vcat((inds["x", i] for i in 1:N1+N2)...)
     x_w = [x; w]
     x_w_inds = [x_inds; inds["w", 0]]
 
     # construct F for low-level MCP
     grad_lags = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
-        Lag = OPs[i].f(x_w) - vars["λ", i]'*OPs[i].g(x_w)
+        Lag = OPs[i].f(x_w) - vars["λ", i]' * OPs[i].g(x_w)
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
-    end 
+    end
     cons_s = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
         OPs[i].g(x_w) - vars["s", i]
     end
-    λs = vcat((vars["λ",i] for i in N1+1:N1+N2)...)
+    λs = vcat((vars["λ", i] for i in N1+1:N1+N2)...)
 
     F = Num[grad_lags; cons_s; λs]
 
-    F! = Symbolics.build_function(F, θall; expression = Val(false))[2]
-    J = Symbolics.sparsejacobian(F, z) 
+    F! = Symbolics.build_function(F, θall; expression=Val(false))[2]
+    J = Symbolics.sparsejacobian(F, z)
     (J_rows, J_cols, J_vals) = findnz(J)
-    J_vals! = Symbolics.build_function(J_vals, θall; expression = Val(false))[2]
+    J_vals! = Symbolics.build_function(J_vals, θall; expression=Val(false))[2]
 
-    l = fill(-Inf, length(grad_lags)+length(cons_s))
-    u = fill(+Inf, length(grad_lags)+length(cons_s))
+    l = fill(-Inf, length(grad_lags) + length(cons_s))
+    u = fill(+Inf, length(grad_lags) + length(cons_s))
     for i in N1+1:N1+N2
         append!(l, OPs[i].l)
         append!(u, OPs[i].u)
     end
 
-    low_level = (; F!, J_rows, J_cols, J_vals!, z_inds=inds["z", 1], l, u, n = length(l))
-    
+    low_level = (; F!, J_rows, J_cols, J_vals!, z_inds=inds["z", 1], l, u, n=length(l))
+
     # reminder :  θ := [x₁ ... xₙ₁ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
 
     grad_lags_x = mapreduce(vcat, 1:N1) do i
-        Lag = OPs[i].f(x_w) - vars["λ", i]'*OPs[i].g(x_w) - vars["ψ", i]'*F
+        Lag = OPs[i].f(x_w) - vars["λ", i]' * OPs[i].g(x_w) - vars["ψ", i]' * F
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
     end
     grad_lags_z = mapreduce(vcat, 1:N1) do i
-        Lag = OPs[i].f(x_w) - vars["λ", i]'*OPs[i].g(x_w) - vars["ψ", i]'*F #- vars["γ", i]'*vars["z", 1]
+        Lag = OPs[i].f(x_w) - vars["λ", i]' * OPs[i].g(x_w) - vars["ψ", i]' * F #- vars["γ", i]'*vars["z", 1]
         if use_z_slacks
-            Lag -= vars["γ", i]'*vars["z", 1]
+            Lag -= vars["γ", i]' * vars["z", 1]
         end
         grad_lag = Symbolics.gradient(Lag, vars["z", 1])
     end
     cons_s_top = mapreduce(vcat, 1:N1) do i
         OPs[i].g(x_w) - vars["s", i]
     end
-    λs_top = vcat((vars["λ",i] for i in 1:N1)...)
+    λs_top = vcat((vars["λ", i] for i in 1:N1)...)
     cons_r = mapreduce(vcat, 1:N1) do i
         F - vars["r", i]
     end
-    ψs = vcat((vars["ψ",i] for i in 1:N1)...)
+    ψs = vcat((vars["ψ", i] for i in 1:N1)...)
     cons_z = mapreduce(vcat, 1:(N1-1); init=Num[]) do i
-        -vars["z",i+1] + vars["z", i]
+        -vars["z", i+1] + vars["z", i]
     end
     append!(cons_z, sum(vars["γ", i] for i in 1:N1))
     #append!(cons_z, -vars["z",1] + vars["z", N1])
 
     Ftotal = [grad_lags_x; grad_lags_z; cons_s_top; λs_top; cons_r; ψs; cons_z]
-    ltotal = [fill(-Inf, length(grad_lags_x));
-              fill(-Inf, length(grad_lags_z)); # will get overwritten by templates
-              fill(-Inf, length(cons_s_top));
-              vcat((OPs[i].l for i in 1:N1)...);
-              fill(-Inf, length(cons_r));
-              fill(-Inf, length(ψs)); # will get overwritten by templates
-              fill(-Inf, length(cons_z))]
-    utotal = [fill(+Inf, length(grad_lags_x));
-              fill(+Inf, length(grad_lags_z)); # will get overwritten by templates
-              fill(+Inf, length(cons_s_top));
-              vcat((OPs[i].u for i in 1:N1)...);
-              fill(+Inf, length(cons_r));
-              fill(+Inf, length(ψs)); # will get overwritten by templates
-              fill(+Inf, length(cons_z))]
+    ltotal = [fill(-Inf, length(grad_lags_x))
+        fill(-Inf, length(grad_lags_z)) # will get overwritten by templates
+        fill(-Inf, length(cons_s_top))
+        vcat((OPs[i].l for i in 1:N1)...)
+        fill(-Inf, length(cons_r))
+        fill(-Inf, length(ψs)) # will get overwritten by templates
+        fill(-Inf, length(cons_z))]
+    utotal = [fill(+Inf, length(grad_lags_x))
+        fill(+Inf, length(grad_lags_z)) # will get overwritten by templates
+        fill(+Inf, length(cons_s_top))
+        vcat((OPs[i].u for i in 1:N1)...)
+        fill(+Inf, length(cons_r))
+        fill(+Inf, length(ψs)) # will get overwritten by templates
+        fill(+Inf, length(cons_z))]
 
     # these are needed for assigning bounds from low-level solutions
     ind = 0
@@ -161,28 +161,28 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
         local_inds
     end
     ind = 0
-    base = length(grad_lags_x)+length(grad_lags_z)+length(cons_s_top)+length(λs_top)+length(cons_r) 
+    base = length(grad_lags_x) + length(grad_lags_z) + length(cons_s_top) + length(λs_top) + length(cons_r)
     r_inds_top = map(1:N1) do i
         local_inds = ((ind+1):(ind+dim_z_low)) .+ base
         ind += dim_z_low
         local_inds
     end
 
-    Ftotal! = Symbolics.build_function(Ftotal, θall; expression = Val(false))[2]
-    Jtotal = Symbolics.sparsejacobian(Ftotal, θ) 
+    Ftotal! = Symbolics.build_function(Ftotal, θall; expression=Val(false))[2]
+    Jtotal = Symbolics.sparsejacobian(Ftotal, θ)
     (Jtotal_rows, Jtotal_cols, Jtotal_vals) = findnz(Jtotal)
-    Jtotal_vals! = Symbolics.build_function(Jtotal_vals, θall; expression = Val(false))[2]
+    Jtotal_vals! = Symbolics.build_function(Jtotal_vals, θall; expression=Val(false))[2]
 
-    top_level = (; F! = Ftotal!, 
-                   J_rows = Jtotal_rows, 
-                   J_cols = Jtotal_cols, 
-                   J_vals! = Jtotal_vals!, 
-                   z_inds = z_inds_top, 
-                   r_inds = r_inds_top, 
-                   l = ltotal, 
-                   u = utotal,
-                   n = length(ltotal),
-                   n_param)
+    top_level = (; (F!)=Ftotal!,
+        J_rows=Jtotal_rows,
+        J_cols=Jtotal_cols,
+        (J_vals!)=Jtotal_vals!,
+        z_inds=z_inds_top,
+        r_inds=r_inds_top,
+        l=ltotal,
+        u=utotal,
+        n=length(ltotal),
+        n_param)
 
     (; low_level, top_level, x_inds, inds)
 end
@@ -207,13 +207,16 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
         for S in solution_graph
             bounds = convert_recipe(low_level, S)
             #try
-                (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
-            @infiltrate iters > max_iters
-                if (norm(dθ) > tol)
-                    converged = false
-                    θ += dθ
-                    break
-                end
+            (; dθ, status, info) = solve_top_level(top_level, bounds, θ)
+            if iters > max_iters
+                @infiltrate
+                return
+            end
+            if (norm(dθ) > tol)
+                converged = false
+                θ += dθ
+                break
+            end
             #catch e
             #    println(e)
             #    errored = true
@@ -259,7 +262,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     end
 
     l = mcp.l
-    u = mcp.u 
+    u = mcp.u
 
     for ind_set in mcp.z_inds
         l[ind_set] .= bounds.lz
@@ -269,29 +272,29 @@ function solve_top_level(mcp, bounds, θ; silent=true)
         l[ind_set] .= bounds.lf
         u[ind_set] .= bounds.uf
     end
-   
+
     f = zeros(n)
     F(n, x, f)
     already_solved = check_mcp_sol(f, x, l, u)
     if already_solved
-        return (; dθ = zero(θF), status=:success, info="problem solved at initialization")
+        return (; dθ=zero(θF), status=:success, info="problem solved at initialization")
     end
 
     PATHSolver.c_api_License_SetString("2830898829&Courtesy&&&USR&45321&5_1_2021&1000&PATH&GEN&31_12_2025&0_0_0&6000&0_0")
     status, θ_out, info = PATHSolver.solve_mcp(
-         F,
-         J,
-         l,
-         u,
-         x;
-         silent,
-         nnz=nnz_total,
-         jacobian_structure_constant = true,
-         jacobian_data_contiguous = true,
-         cumulative_iteration_limit = 50_000,
-         convergence_tolerance=1e-8,
-     ) 
-    
+        F,
+        J,
+        l,
+        u,
+        x;
+        silent,
+        nnz=nnz_total,
+        jacobian_structure_constant=true,
+        jacobian_data_contiguous=true,
+        cumulative_iteration_limit=50_000,
+        convergence_tolerance=1e-8
+    )
+
     #if status != PATHSolver.MCP_Solved && silent
     #    return solve_top_level(mcp, bounds, θ; silent=false)
     #end
@@ -341,21 +344,21 @@ function solve_low_level!(mcp, θ; silent=true)
     if already_solved
         return (; status=:success, info="problem solved at initialization")
     end
-    
+
     PATHSolver.c_api_License_SetString("2830898829&Courtesy&&&USR&45321&5_1_2021&1000&PATH&GEN&31_12_2025&0_0_0&6000&0_0")
     status, z_out, info = PATHSolver.solve_mcp(
-         F,
-         J,
-         mcp.l,
-         mcp.u,
-         z;
-         silent,
-         nnz=nnz_total,
-         jacobian_structure_constant = true,
-         jacobian_data_contiguous = true,
-         cumulative_iteration_limit = 50_000,
-         convergence_tolerance=1e-8,
-     ) 
+        F,
+        J,
+        mcp.l,
+        mcp.u,
+        z;
+        silent,
+        nnz=nnz_total,
+        jacobian_structure_constant=true,
+        jacobian_data_contiguous=true,
+        cumulative_iteration_limit=50_000,
+        convergence_tolerance=1e-8
+    )
 
     if status != PATHSolver.MCP_Solved && silent
         return solve_low_level!(mcp, θ; silent=false)
@@ -363,9 +366,32 @@ function solve_low_level!(mcp, θ; silent=true)
 
     @infiltrate status != PATHSolver.MCP_Solved
 
-    θ[mcp.z_inds] .= z_out 
+    θ[mcp.z_inds] .= z_out
 
     (; status, info)
+end
+
+function check_mcp_fail(f, z, l, u; tol=1e-4)
+    n = length(f)
+    fails = falses(n)
+    for i in 1:n
+        if isapprox(l[i], u[i]; atol=tol)
+            continue
+        elseif f[i] ≥ tol && z[i] < l[i] + tol
+            continue
+        elseif -tol < f[i] < tol && z[i] < l[i] + tol
+            continue
+        elseif -tol < f[i] < tol && l[i] + tol ≤ z[i] ≤ u[i] - tol
+            continue
+        elseif -tol < f[i] < tol && z[i] > u[i] - tol
+            continue
+        elseif f[i] ≤ -tol && z[i] > u[i] - tol
+            continue
+        else
+            fails[i] = true
+        end
+    end
+    return findall(fails)
 end
 
 function check_mcp_sol(f, z, l, u; tol=1e-4)
@@ -374,15 +400,15 @@ function check_mcp_sol(f, z, l, u; tol=1e-4)
     for i in 1:n
         if isapprox(l[i], u[i]; atol=tol)
             continue
-        elseif f[i] ≥ tol && z[i] < l[i]+tol
+        elseif f[i] ≥ tol && z[i] < l[i] + tol
             continue
-        elseif -tol < f[i] < tol && z[i] < l[i]+tol
+        elseif -tol < f[i] < tol && z[i] < l[i] + tol
             continue
-        elseif -tol < f[i] < tol && l[i]+tol ≤ z[i] ≤ u[i]-tol
+        elseif -tol < f[i] < tol && l[i] + tol ≤ z[i] ≤ u[i] - tol
             continue
-        elseif -tol < f[i] < tol && z[i] > u[i]-tol
+        elseif -tol < f[i] < tol && z[i] > u[i] - tol
             continue
-        elseif f[i] ≤ -tol && z[i] > u[i]-tol
+        elseif f[i] ≤ -tol && z[i] > u[i] - tol
             continue
         else
             sol = false
@@ -393,46 +419,49 @@ function check_mcp_sol(f, z, l, u; tol=1e-4)
 end
 
 function get_local_solution_graph(mcp, θ; tol=1e-5)
-    l = mcp.l  
+    l = mcp.l
     u = mcp.u
     n = length(l)
     f = zeros(n)
     mcp.F!(f, θ)
     z = @view θ[mcp.z_inds]
-    J = Dict{Int, Vector{Int}}()
+    J = Dict{Int,Vector{Int}}()
     for i in 1:n
         Ji = Int[]
-        if isapprox(l[i], u[i]; atol=2*tol)
+        if isapprox(l[i], u[i]; atol=2 * tol)
             push!(Ji, 4)
-        elseif f[i] ≥ tol && z[i] < l[i]+tol
+        elseif f[i] ≥ tol && z[i] < l[i] + tol
             push!(Ji, 1)
-        elseif -tol < f[i] < tol && z[i] < l[i]+tol
+        elseif -tol < f[i] < tol && z[i] < l[i] + tol
             push!(Ji, 1)
             push!(Ji, 2)
-        elseif -tol < f[i] < tol && l[i]+tol ≤ z[i] ≤ u[i]-tol
+        elseif -tol < f[i] < tol && l[i] + tol ≤ z[i] ≤ u[i] - tol
             push!(Ji, 2)
-        elseif -tol < f[i] < tol && z[i] > u[i]-tol
+        elseif -tol < f[i] < tol && z[i] > u[i] - tol
             push!(Ji, 2)
             push!(Ji, 3)
-        elseif f[i] ≤ -tol && z[i] > u[i]-tol
+        elseif f[i] ≤ -tol && z[i] > u[i] - tol
             push!(Ji, 3)
         end
         J[i] = Ji
     end
     valid_solution = !any(isempty.(Ji for Ji in values(J)))
-    !valid_solution && begin @infiltrate;  error("Not a valid solution!") end
+    !valid_solution && begin
+        @infiltrate
+        error("Not a valid solution!")
+    end
     recipes = get_all_recipes(J)
 end
 
 function get_all_recipes(J)
-    Ks = Vector{Dict{Int, Set{Int}}}()
+    Ks = Vector{Dict{Int,Set{Int}}}()
     N = length(J)
     multiples = [i for i in 1:N if length(J[i]) > 1]
     singles = setdiff(1:N, multiples)
     It = Iterators.product([J[i] for i in multiples]...)
     for assignment in It
-        K = Dict(j=>Set{Int}() for j in 1:4)
-        for (e,ej) in enumerate(assignment)
+        K = Dict(j => Set{Int}() for j in 1:4)
+        for (e, ej) in enumerate(assignment)
             push!(K[ej], multiples[e])
         end
         for e in singles
