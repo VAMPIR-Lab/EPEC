@@ -234,8 +234,6 @@ function setup(; T=10,
 	sp_b = EPEC.create_epec((1,0), OP2)
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
-    #@infiltrate
-    #epec = [OP1 OP2; OP1 OP2]
 
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
@@ -284,20 +282,27 @@ function solve_seq(probs, x0)
         append!(Xb, xb)
     end
     init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-    
-	#@infiltrate
+    #@infiltrate
 	#show_me(init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-
 	init = [init; x0]    
 
+
 	@info "Solving singleplayer: a"
-	θ_sp_a =  solve(probs.sp_a, init)
-	#show_me([safehouse.θ_out; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-	
+    #!!! 348 vs 568 breaks it
+    sp_a_init = zeros(probs.gnep.top_level.n)
+    sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
+    sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60] = [Xb; Ub]
+    sp_a_init = [sp_a_init; x0]
+ 
+    @infiltrate
+	θ_sp_a = solve(probs.sp_a, sp_a_init)
+    #θ_sp_a =  solve(probs.sp_a, init)
+    #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.θ_out[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], safehouse.w[probs.sp_a.top_level.n+1:end]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+    #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+	#@infiltrate
+
     @info "Solving gnep.."
     θg = solve(probs.gnep, init)
-    #@infiltrate
-
     θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
     θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
     θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
@@ -310,7 +315,6 @@ function solve_seq(probs, x0)
     @info "Solving bilevel.."
     #@info probs.bilevel.inds["λ", 1]
     θ = solve(probs.bilevel, θb)
-    #@infiltrate
     #θ = solve(probs.bilevel, init)
     Z = probs.extract_bilevel(θ)
     #Z = probs.extract_gnep(θg)

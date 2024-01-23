@@ -15,6 +15,6 @@ probs = setup(; T=10,
 	box_width = 1.0,
 	lat_max = 1.0);
 
-x0 = [1., 1, 0, 1, -1, 0, 0, 1]
+x0 = [1., 3, 0, 1, -1, 2, 0, 1]
 
 sim_results = solve_simulation(probs, 10; x0);

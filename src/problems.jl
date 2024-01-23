@@ -207,6 +207,7 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
     converged = false
     while !converged
         iters += 1
+
         (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
@@ -249,10 +250,8 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
     @assert length(J_row) == nnz_total
 
     θF = copy(θ)
-    #x = θ[1:n] # WARNING assumes that first n elements are non-parameter values.
-    #w = θ[n+1:end]
-    x = θ[1:inds["w", 0][1] - 1]
-    w = θ[inds["w", 0]]
+    x = θ[1:n] # WARNING assumes that first n elements are non-parameter values.
+    w = θ[n+1:end]
     #@infiltrate
 
     function F(n, θ, result)
