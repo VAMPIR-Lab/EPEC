@@ -260,8 +260,8 @@ function setup(; T=10,
 end
 
 function solve_seq(probs, x0)
-    init = zeros(probs.gnep.top_level.n)
-    X = init[probs.gnep.x_inds]
+	dummy_init = zeros(probs.gnep.top_level.n)
+    X = dummy_init[probs.gnep.x_inds]
     #T = Int(length(X) / 12)
     T = probs.params.T
     Δt = probs.params.Δt
@@ -282,47 +282,75 @@ function solve_seq(probs, x0)
         append!(Xa, xa)
         append!(Xb, xb)
     end
-    init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-    @infiltrate
-	#show_me(init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-	init = [init; x0]    
-
-
-	@info "Solving singleplayer: a"
+    dummy_init = [Xa; Ua; Xb; Ub]
+    #show_me(dummy_init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+	
+	@info "Solving singleplayer a.."
     #!!! 348 vs 568 breaks it
+	# !!! Ordering of x_w changes because:
+    # 1p: [x1=>1:60 λ1,s1=>61:280, w=>281:348]
+    # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568
     sp_a_init = zeros(probs.gnep.top_level.n)
     sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
     sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60] = [Xb; Ub]
-    sp_a_init[probs.sp_a.top_level.n+61:probs.sp_a.top_level.n+68] = x0;
-    #sp_a_init = [sp_a_init; x0]
-    θ_sp_a = solve(probs.sp_a, sp_a_init)
-    #@infiltrate
-    # !!! Ordering of x_w changes because:
-    # 1p: [x1=>1:60 λ1,s1=>61:280, w=>281:348]
-    # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568]
-    # Solution: parametrize view statements?
-	#θ_sp_a = solve(probs.sp_a, sp_a_init)
-    #θ_sp_a =  solve(probs.sp_a, init)
-    #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.θ_out[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], safehouse.w[probs.sp_a.top_level.n+1:end]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-    #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-    return
-    @info "Solving gnep.."
-    θg = solve(probs.gnep, init)
-    θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-    θb[probs.bilevel.x_inds] = θg[probs.gnep.x_inds]
-    θb[probs.bilevel.inds["λ", 1]] = θg[probs.gnep.inds["λ", 1]]
-    θb[probs.bilevel.inds["s", 1]] = θg[probs.gnep.inds["s", 1]]
-    θb[probs.bilevel.inds["λ", 2]] = θg[probs.gnep.inds["λ", 2]]
-    θb[probs.bilevel.inds["s", 2]] = θg[probs.gnep.inds["s", 2]]
-    θb[probs.bilevel.inds["w", 0]] = θg[probs.gnep.inds["w", 0]]
+    sp_a_init[probs.sp_a.top_level.n+61:probs.sp_a.top_level.n+68] = x0; # right now parameters are expected to be contiguous
+	#sp_a_init = [sp_a_init; x0]; 
+    θ_sp_a = solve(probs.sp_a, sp_a_init) 
+	#show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+	# if it fails:
+	#show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
-    
-    @info "Solving bilevel.."
-    #@info probs.bilevel.inds["λ", 1]
-    θ = solve(probs.bilevel, θb)
-    #θ = solve(probs.bilevel, init)
-    Z = probs.extract_bilevel(θ)
-    #Z = probs.extract_gnep(θg)
+	@info "Solving singleplayer b.."
+	# swapping b for a
+    sp_b_init = zeros(probs.gnep.top_level.n)
+    sp_b_init[probs.sp_b.x_inds] = [Xb; Ub]
+    sp_b_init[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60] = [Xa; Ua]
+    sp_b_init[probs.sp_b.top_level.n+61:probs.sp_b.top_level.n+68] = [x0[5:8]; x0[1:4]];
+    #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0], need to be changed in problems.jl
+	θ_sp_b = solve(probs.sp_a, sp_b_init) 
+	#show_me([θ_sp_b[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60]; θ_sp_b[probs.sp_b.x_inds]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+	# if it fails:
+	#show_me([safehouse.w[1:60]; safehouse.θ_out[probs.sp_b.x_inds]], [safehouse.w[65:68]; safehouse.w[61:64]]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+
+    @info "Solving gnep.."
+	gnep_init = zeros(probs.gnep.top_level.n)
+	gnep_init[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
+	gnep_init[probs.bilevel.inds["λ", 1]] = θ_sp_a[probs.gnep.inds["λ", 1]]
+    gnep_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
+    gnep_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
+    gnep_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
+	gnep_init = [gnep_init; x0]  
+	#show_me(gnep_init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+
+	θ_gnep = gnep_init; # fall back
+	try
+		θ_gnep = solve(probs.gnep, gnep_init)
+		#show_me(θ_gnep, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+	catch err
+		println(err)
+		@info "Fell back to gnep init.."
+	end
+ 
+	@info "Solving bilevel.."
+    bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+    bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
+    bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
+    bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
+    bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
+    bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
+    bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
+   
+	θ_bilevel = bilevel_init; # fall back
+	try
+		θ_bilevel = solve(probs.bilevel, bilevel_init)
+		#show_me(θ_bilevel, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+		Z = probs.extract_bilevel(θ_bilevel)
+	catch err
+		println(err)
+		@info "Fell back to gnep init.."
+	end
+
+	Z = probs.extract_bilevel(θ_bilevel)
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
@@ -331,7 +359,7 @@ function solve_seq(probs, x0)
     gd = col(Z.Xa, Z.Xb, probs.params.r)
     h = responsibility(Z.Xa, Z.Xb)
     gd_both = [gd - l.(h) gd - l.(-h) gd]
-    (; P1, P2, gd_both, h, U1, U2)
+    (; P1, P2, gd_both, h, U1, U2, dummy_init, gnep_init, bilevel_init)
 end
 
 function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])

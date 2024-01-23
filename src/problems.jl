@@ -218,7 +218,8 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
             #try
             (; dθ, status, info) = solve_top_level(top_level, bounds, θ, epec.x_inds, epec.inds, epec.f_dict)
             if iters > max_iters
-                @infiltrate
+                #@infiltrate
+                throw(error("Solver failure"))
                 return
             end
             if (norm(dθ) > tol)
@@ -313,8 +314,8 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
         if status == PATHSolver.MCP_NoProgress && info.residual < 1e-4
             # continue
         else 
-            @infiltrate
-            error("Top-level Solver failure")
+            #@infiltrate
+            throw(error("Top-level Solver failure"))
         end
     end
 
