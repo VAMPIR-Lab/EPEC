@@ -12,6 +12,7 @@ function f1(Z; α1=1.0, α2=0.0, β=1.0)
     @inbounds Xb = @view(Z[6*T+1:10*T])
     @inbounds Ub = @view(Z[10*T+1:12*T])
 
+    #@infiltrate
     running_cost = 0.0
 
     for t in 1:T
@@ -282,7 +283,7 @@ function solve_seq(probs, x0)
         append!(Xb, xb)
     end
     init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-    #@infiltrate
+    @infiltrate
 	#show_me(init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 	init = [init; x0]    
 
@@ -292,15 +293,19 @@ function solve_seq(probs, x0)
     sp_a_init = zeros(probs.gnep.top_level.n)
     sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
     sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60] = [Xb; Ub]
-    sp_a_init = [sp_a_init; x0]
- 
-    @infiltrate
-	θ_sp_a = solve(probs.sp_a, sp_a_init)
+    sp_a_init[probs.sp_a.top_level.n+61:probs.sp_a.top_level.n+68] = x0;
+    #sp_a_init = [sp_a_init; x0]
+    θ_sp_a = solve(probs.sp_a, sp_a_init)
+    #@infiltrate
+    # !!! Ordering of x_w changes because:
+    # 1p: [x1=>1:60 λ1,s1=>61:280, w=>281:348]
+    # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568]
+    # Solution: parametrize view statements?
+	#θ_sp_a = solve(probs.sp_a, sp_a_init)
     #θ_sp_a =  solve(probs.sp_a, init)
     #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.θ_out[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], safehouse.w[probs.sp_a.top_level.n+1:end]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
     #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-	#@infiltrate
-
+    return
     @info "Solving gnep.."
     θg = solve(probs.gnep, init)
     θb = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
