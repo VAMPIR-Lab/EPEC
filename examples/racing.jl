@@ -212,7 +212,7 @@ function setup(; T=10,
     r=1.0,
     α1=0.01,
     α2=0.001,
-    β = 1e3,
+    β=1e3,
     cd=0.2,
     u_max_nominal=2.0,
     u_max_drafting=5.0,
@@ -220,8 +220,8 @@ function setup(; T=10,
     box_width=1.0,
     lat_max=5.0)
 
-    lb = [fill(0., 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-lat_max, T)]
-    ub = [fill(0., 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(+lat_max, T)]
+    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-lat_max, T)]
+    ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(+lat_max, T)]
 
     f1_pinned = (z -> f1(z; α1, α2, β))
     f2_pinned = (z -> f2(z; α1, α2, β))
@@ -231,8 +231,8 @@ function setup(; T=10,
     OP1 = OptimizationProblem(12 * T + 8, 1:6*T, f1_pinned, g1_pinned, lb, ub)
     OP2 = OptimizationProblem(12 * T + 8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
 
-	sp_a = EPEC.create_epec((1,0), OP1)
-	sp_b = EPEC.create_epec((1,0), OP2)
+    sp_a = EPEC.create_epec((1, 0), OP1)
+    sp_b = EPEC.create_epec((1, 0), OP2)
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
 
@@ -360,6 +360,118 @@ function solve_seq(probs, x0)
     h = responsibility(Z.Xa, Z.Xb)
     gd_both = [gd - l.(h) gd - l.(-h) gd]
     (; P1, P2, gd_both, h, U1, U2, dummy_init, gnep_init, bilevel_init)
+end
+
+function solve_seq_adaptive(probs, x0; only_want_gnep=false)
+    bilevel_success = false
+    gnep_success = false
+    sp_success = false
+
+    θ_bilevel = []
+    θ_gnep = []
+    θ_sp = []
+    Z_accepted = dummy_init
+
+    preference_id = 0
+    all_solutions = []
+
+    # preference order
+    # (if we want bilevel):
+    # 1. bilevel
+    # 2. gnep->bilevel
+    # 3. sp->gnep->bilevel
+    # 4. sp->bilevel
+    # (if we only want gnep):
+    # 5. gnep
+    # 6. sp->gnep
+    # 7. sp
+    if only_want_gnep
+        want_gnep = true
+        want_bilevel = false
+    else
+        want_gnep = false
+        want_bilevel = true
+    end
+    want_sp = false # fallback
+   
+    if want_bilevel
+        bilevel_success, θ_bilevel = attempt_bilevel(prob.bilevel, dummy_init)
+
+        if bilevel_success
+            @info "bilevel success"
+            preference_id = 1
+            θ_accepted = θ_bilevel
+        else
+            want_gnep = true
+        end
+    end
+
+    if want_gnep
+        gnep_success, θ_gnep = attempt_gnep(prob.gnep, dummy_init)
+
+        if gnep_success
+            if want_bilevel
+                bilevel_success, θ_bilevel = attempt_bilevel(prob.bilevel, θ_gnep)
+
+                if bilevel_success
+                    @info "gnep->bilevel success"
+                    preference_id = 2
+                    θ_accepted = θ_bilevel
+                else
+                    want_sp = true
+                end
+            else
+                @info "gnep success"
+                preference_id = 5
+                θ_accepted = θ_gnep
+            end
+        else
+            want_sp = true
+        end
+    end
+
+    if want_sp
+        sp_success, θ_sp = attempt_sp()
+
+        if sp_success
+            if want_gnep
+                gnep_success, θ_gnep = attempt_gnep(prob.gnep, θ_sp)
+
+                if gnep_success
+                    if want_bilevel
+                        bilevel_success, θ_bilevel = attempt_bilevel(prob.bilevel, θ_gnep)
+
+                        if bilevel_success
+                            @info "sp->gnep->bilevel success"
+                            preference_id = 3
+                            θ_accepted = θ_bilevel
+                        else
+                            want_sp = true
+                        end
+                    else
+                        @info "sp->gnep success"
+                        preference_id = 6
+                        want_gnep = false
+                        θ_accepted = θ_gnep
+                    end
+                else
+                    if want_bilevel
+                        bilevel_success, θ_bilevel = attempt_bilevel(prob.bilevel, θ_sp)
+
+                        if bilevel_success
+                            @info "sp->bilevel success"
+                            preference_id = 4
+                            θ_accepted = θ_bilevel
+                        end
+                    else
+                        @info "sp success"
+                        preference_id = 7
+                        θ_accepted = θ_sp
+                    end
+                end
+            end
+        end
+    end
 end
 
 function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
