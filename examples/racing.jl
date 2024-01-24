@@ -271,7 +271,7 @@ function attempt_solve(prob, init)
     (success, result)
 end
 
-function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=false)
+function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=false, try_gnep_first=true)
     T = probs.params.T
     Δt = probs.params.Δt
     cd = probs.params.cd
@@ -318,7 +318,12 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         want_gnep = false
         want_bilevel = true
     end
-    want_sp = false # fallback
+
+	if !try_bilevel_first && !try_gnep_first
+		want_sp = true 
+	else
+   		want_sp = false
+	end
 
     # preference order
     # 1. bilevel
@@ -347,7 +352,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         want_gnep = true
     end
 
-    if want_gnep
+    if try_gnep_first && want_gnep
         # initialized from dummy:
         gnep_init = zeros(probs.gnep.top_level.n)
         gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
@@ -397,7 +402,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         #sp_a_init = [sp_a_init; x0]; 
 
         @info "(7a) sp_a..."
-        θ_sp_a_success, θ_sp_a = attempt_solve(probs.gnep, gnep_init)
+        θ_sp_a_success, θ_sp_a = attempt_solve(probs.sp_a, sp_a_init)
         #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # if it fails:
         #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
@@ -420,7 +425,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
             #@info "sp success 7"
             gnep_like = zeros(probs.gnep.top_level.n)
             gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
-            gnep_init = [gnep_init; x0]
+            gnep_like = [gnep_like; x0]
             valid_Z[7] = probs.extract_gnep(gnep_like)
 
             if want_gnep
@@ -541,20 +546,20 @@ function visualize(; rad=0.5, lat=6.0)
     f = Figure(resolution=(1000, 1000))
     ax = Axis(f[1, 1], aspect=DataAspect())
 
-    lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
-    lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
+    GLMakie.lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
+    GLMakie.lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
 
     XA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
     XB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
 
     circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
     circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
-    lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=5)
-    lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=5)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=5)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=5)
 
     for t in 1:10
-        lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
-        lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
     end
 
     return (f, ax, XA, XB, lat)
@@ -573,8 +578,8 @@ function update_visual!(ax, XA, XB, x0, P1, P2; T=10, lat=6.0)
         XB[l][2][] = P2[l, 2]
     end
 
-    xlims!(ax, -2 * lat, 2 * lat)
-    ylims!(ax, x0[6] - lat, maximum([P1[T, 2], P2[T, 2]]) + lat)
+    GLMakie.xlims!(ax, -2 * lat, 2 * lat)
+    GLMakie.ylims!(ax, x0[6] - lat, maximum([P1[T, 2], P2[T, 2]]) + lat)
 end
 
 function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
