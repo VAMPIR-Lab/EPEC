@@ -397,8 +397,8 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568
         sp_a_init = zeros(probs.gnep.top_level.n)
         sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
-        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60] = [Xb; Ub]
-        sp_a_init[probs.sp_a.top_level.n+61:probs.sp_a.top_level.n+68] = x0 # right now parameters are expected to be contiguous
+        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+6*T] = [Xb; Ub]
+        sp_a_init[probs.sp_a.top_level.n+6*T+1:probs.sp_a.top_level.n+6*T+8] = x0 # right now parameters are expected to be contiguous
         #sp_a_init = [sp_a_init; x0]; 
 
         @info "(7a) sp_a..."
@@ -409,8 +409,8 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         # swapping b for a:
         sp_b_init = zeros(probs.gnep.top_level.n)
         sp_b_init[probs.sp_b.x_inds] = [Xb; Ub]
-        sp_b_init[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60] = [Xa; Ua]
-        sp_b_init[probs.sp_b.top_level.n+61:probs.sp_b.top_level.n+68] = [x0[5:8]; x0[1:4]]
+        sp_b_init[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+6*T] = [Xa; Ua]
+        sp_b_init[probs.sp_b.top_level.n+6*T+1:probs.sp_b.top_level.n+6*T+8] = [x0[5:8]; x0[1:4]]
         #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
 
         @info "(7b) sp_b..."
@@ -546,8 +546,8 @@ function visualize(; rad=0.5, lat=6.0)
     f = Figure(resolution=(1000, 1000))
     ax = Axis(f[1, 1], aspect=DataAspect())
 
-    GLMakie.lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
-    GLMakie.lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
+    GLMakie.lines!(ax, [-lat, -lat], [-10.0, 1000.0], color=:black)
+    GLMakie.lines!(ax, [+lat, +lat], [-10.0, 1000.0], color=:black)
 
     XA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
     XB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
