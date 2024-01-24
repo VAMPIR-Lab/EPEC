@@ -375,11 +375,14 @@ function solve_low_level!(mcp, θ; silent=true)
         convergence_tolerance=1e-8
     )
 
-    if status != PATHSolver.MCP_Solved && silent
-        return solve_low_level!(mcp, θ; silent=false)
-    end
+    #if status != PATHSolver.MCP_Solved && silent
+    #    return solve_low_level!(mcp, θ; silent=false)
+    #end
 
-    @infiltrate status != PATHSolver.MCP_Solved
+    if status != PATHSolver.MCP_Solved
+        throw(error("Low-level Solver failure"))
+    end
+    #@infiltrate status != PATHSolver.MCP_Solved
 
     θ[mcp.z_inds] .= z_out
 
