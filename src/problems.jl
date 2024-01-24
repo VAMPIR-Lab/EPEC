@@ -192,7 +192,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
         n=length(ltotal),
         n_param)
 
-    (; low_level, top_level, x_inds, inds, f_dict)
+    (; low_level, top_level, x_inds, inds, f_dict, OPs)
 end
 
 function solve(epec; tol=1e-6)
