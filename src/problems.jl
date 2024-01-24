@@ -303,7 +303,7 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
         jacobian_structure_constant=true,
         jacobian_data_contiguous=true,
         cumulative_iteration_limit=50_000,
-        convergence_tolerance=1e-8
+        convergence_tolerance=1e-7
     )
 
     #if status != PATHSolver.MCP_Solved && silent
@@ -372,7 +372,7 @@ function solve_low_level!(mcp, θ; silent=true)
         jacobian_structure_constant=true,
         jacobian_data_contiguous=true,
         cumulative_iteration_limit=50_000,
-        convergence_tolerance=1e-8
+        convergence_tolerance=1e-7
     )
 
     #if status != PATHSolver.MCP_Solved && silent
@@ -389,7 +389,7 @@ function solve_low_level!(mcp, θ; silent=true)
     (; status, info)
 end
 
-function check_mcp_fail(f, z, l, u; tol=1e-4)
+function check_mcp_fail(f, z, l, u; tol=1e-6)
     n = length(f)
     fails = falses(n)
     for i in 1:n
@@ -412,7 +412,7 @@ function check_mcp_fail(f, z, l, u; tol=1e-4)
     return findall(fails)
 end
 
-function check_mcp_sol(f, z, l, u; tol=1e-4)
+function check_mcp_sol(f, z, l, u; tol=1e-6)
     n = length(f)
     sol = true
     for i in 1:n
@@ -436,7 +436,7 @@ function check_mcp_sol(f, z, l, u; tol=1e-4)
     return sol
 end
 
-function get_local_solution_graph(mcp, θ; tol=1e-5)
+function get_local_solution_graph(mcp, θ; tol=1e-6)
     l = mcp.l
     u = mcp.u
     n = length(l)
