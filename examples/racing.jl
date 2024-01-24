@@ -299,6 +299,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
     valid_Z[8] = Z
     #dummy_init = zeros(probs.gnep.top_level.n)
     #dummy_init = [Xa; Ua; Xb; Ub]
+    #show_me(dummy_init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
     bilevel_success = false
     gnep_success = false
@@ -319,7 +320,6 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
     end
     want_sp = false # fallback
 
-
     # preference order
     # 1. bilevel
     # 2. gnep->bilevel
@@ -334,7 +334,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
         bilevel_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
         bilevel_init = [bilevel_init; x0]
-        @info "bilevel (1)..."
+        @info "(1) bilevel..."
         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
         if bilevel_success
@@ -352,7 +352,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         gnep_init = zeros(probs.gnep.top_level.n)
         gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
         gnep_init = [gnep_init; x0]
-        @info "gnep (5)..."
+        @info "(5) gnep..."
         gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
         if gnep_success
@@ -368,7 +368,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
                 bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
                 bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
                 bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
-                @info "gnep->bilevel (2)..."
+                @info "(2) gnep->bilevel..."
                 bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
                 if bilevel_success
@@ -396,7 +396,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         sp_a_init[probs.sp_a.top_level.n+61:probs.sp_a.top_level.n+68] = x0 # right now parameters are expected to be contiguous
         #sp_a_init = [sp_a_init; x0]; 
 
-        @info "sp_a (7a)..."
+        @info "(7a) sp_a..."
         θ_sp_a_success, θ_sp_a = attempt_solve(probs.gnep, gnep_init)
         #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # if it fails:
@@ -408,7 +408,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
         sp_b_init[probs.sp_b.top_level.n+61:probs.sp_b.top_level.n+68] = [x0[5:8]; x0[1:4]]
         #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
 
-        @info "sp_b (7b)..."
+        @info "(7b) sp_b..."
         θ_sp_b_success, θ_sp_b = attempt_solve(probs.sp_a, sp_b_init)
         #show_me([θ_sp_b[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60]; θ_sp_b[probs.sp_b.x_inds]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # if it fails:
@@ -432,7 +432,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
                 gnep_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
                 gnep_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
                 gnep_init = [gnep_init; x0]
-                @info "sp->gnep (6)..."
+                @info "(6) sp->gnep..."
                 gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
                 if gnep_success
@@ -449,7 +449,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
                         bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
                         bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
                         bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
-                        @info "sp->gnep->bilevel (3)..."
+                        @info "(3) sp->gnep->bilevel..."
                         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
                         if bilevel_success
@@ -468,7 +468,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
                         bilevel_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
                         bilevel_init[probs.bilevel.inds["w", 0]] = x0
                         #bilevel_init = [bilevel_init; x0]
-                        @info "sp->bilevel (4)..."
+                        @info "(4) sp->bilevel..."
                         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
                         if bilevel_success
@@ -484,7 +484,12 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
     sorted_Z = sort(collect(valid_Z), by=x -> x[1])
     lowest_preference, Z = sorted_Z[1] # best pair
 
-    @info "Success $lowest_preference"
+    if lowest_preference < 8
+        @info "Success $lowest_preference"
+    else
+        @infiltrate
+        #error("You failed singleplayer!")
+    end
 
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
@@ -497,12 +502,12 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
     (; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z)
 end
 
-function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
+function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want_gnep=false)
     results = Dict()
     for t = 1:T
-        @info "Step $t:"
+        @info "Sim timestep $t:"
         #r = solve_seq(probs, x0)
-        r = solve_seq_adaptive(probs, x0)
+        r = solve_seq_adaptive(probs, x0; only_want_gnep=only_want_gnep)
         x0a = r.P1[1, :]
         x0b = r.P2[1, :]
         results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z)
@@ -598,7 +603,6 @@ function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
         ax.title = string(t)
     end
 end
-
 
 #
 #
