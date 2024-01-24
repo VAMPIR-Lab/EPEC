@@ -259,6 +259,352 @@ function setup(; T=10,
     problems = (; sp_a, sp_b, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting))
 end
 
+function attempt_solve(prob, init)
+    success = true
+    result = init
+    try
+        result = solve(prob, init)
+    catch err
+        println(err)
+        success = false
+    end
+    (success, result)
+end
+
+function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=false)
+    T = probs.params.T
+    Δt = probs.params.Δt
+    cd = probs.params.cd
+    Xa = []
+    Ua = []
+    Xb = []
+    Ub = []
+    x0a = x0[1:4]
+    x0b = x0[5:8]
+    xa = x0a
+    xb = x0b
+    for t in 1:T
+        ua = cd * xa[3:4]
+        ub = cd * xb[3:4]
+        xa = pointmass(xa, ua, Δt, cd)
+        xb = pointmass(xb, ub, Δt, cd)
+        append!(Ua, ua)
+        append!(Ub, ub)
+        append!(Xa, xa)
+        append!(Xb, xb)
+    end
+    # dummy init
+    Z = (; Xa, Ua, Xb, Ub, x0a, x0b)
+    valid_Z = Dict()
+    valid_Z[8] = Z
+    #dummy_init = zeros(probs.gnep.top_level.n)
+    #dummy_init = [Xa; Ua; Xb; Ub]
+
+    bilevel_success = false
+    gnep_success = false
+    sp_success = false
+    preference_id = 0
+
+    θ_bilevel = []
+    θ_gnep = []
+    θ_sp_a = []
+    θ_sp_b = []
+
+    if only_want_gnep
+        want_gnep = true
+        want_bilevel = false
+    else
+        want_gnep = false
+        want_bilevel = true
+    end
+    want_sp = false # fallback
+
+
+    # preference order
+    # 1. bilevel
+    # 2. gnep->bilevel
+    # 3. sp->gnep->bilevel
+    # 4. sp->bilevel
+    # 5. gnep
+    # 6. sp->gnep
+    # 7. sp
+    # 8. dummy
+    if try_bilevel_first && want_bilevel
+        # initialized from dummy:
+        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+        bilevel_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
+        bilevel_init = [bilevel_init; x0]
+        @info "bilevel (1)..."
+        bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
+
+        if bilevel_success
+            #@info "bilevel success 1"
+            valid_Z[1] = probs.extract_bilevel(θ_bilevel)
+        else
+            want_gnep = true
+        end
+    elseif want_bilevel
+        want_gnep = true
+    end
+
+    if want_gnep
+        # initialized from dummy:
+        gnep_init = zeros(probs.gnep.top_level.n)
+        gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
+        gnep_init = [gnep_init; x0]
+        @info "gnep (5)..."
+        gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
+
+        if gnep_success
+            #@info "gnep success 5"
+            valid_Z[5] = probs.extract_gnep(θ_gnep)
+
+            if want_bilevel
+                # initialized from gnep:
+                bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+                bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
+                bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
+                bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
+                bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
+                bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
+                bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
+                @info "gnep->bilevel (2)..."
+                bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
+
+                if bilevel_success
+                    #@info "gnep->bilevel success 2"
+                    valid_Z[2] = probs.extract_bilevel(θ_bilevel)
+                else
+                    want_sp = true
+                end
+            end
+        else
+            want_sp = true
+        end
+    end
+
+    if want_sp
+        # initialized from dummy:
+        # [!] need to be changed in problems.jl so this isn't such a mess
+        # !!! 348 vs 568 breaks it
+        # !!! Ordering of x_w changes because:
+        # 1p: [x1=>1:60 λ1,s1=>61:280, w=>281:348]
+        # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568
+        sp_a_init = zeros(probs.gnep.top_level.n)
+        sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
+        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60] = [Xb; Ub]
+        sp_a_init[probs.sp_a.top_level.n+61:probs.sp_a.top_level.n+68] = x0 # right now parameters are expected to be contiguous
+        #sp_a_init = [sp_a_init; x0]; 
+
+        @info "sp_a (7a)..."
+        θ_sp_a_success, θ_sp_a = attempt_solve(probs.gnep, gnep_init)
+        #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+        # if it fails:
+        #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+        # swapping b for a:
+        sp_b_init = zeros(probs.gnep.top_level.n)
+        sp_b_init[probs.sp_b.x_inds] = [Xb; Ub]
+        sp_b_init[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60] = [Xa; Ua]
+        sp_b_init[probs.sp_b.top_level.n+61:probs.sp_b.top_level.n+68] = [x0[5:8]; x0[1:4]]
+        #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
+
+        @info "sp_b (7b)..."
+        θ_sp_b_success, θ_sp_b = attempt_solve(probs.sp_a, sp_b_init)
+        #show_me([θ_sp_b[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60]; θ_sp_b[probs.sp_b.x_inds]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+        # if it fails:
+        #show_me([safehouse.w[1:60]; safehouse.θ_out[probs.sp_b.x_inds]], [safehouse.w[65:68]; safehouse.w[61:64]]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)    
+
+        sp_success = θ_sp_a_success && θ_sp_b_success
+
+        if sp_success
+            #@info "sp success 7"
+            gnep_like = zeros(probs.gnep.top_level.n)
+            gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
+            gnep_init = [gnep_init; x0]
+            valid_Z[7] = probs.extract_gnep(gnep_like)
+
+            if want_gnep
+                # initialized from θ_sp_a and θ_sp_b:
+                gnep_init = zeros(probs.gnep.top_level.n)
+                gnep_init[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
+                gnep_init[probs.bilevel.inds["λ", 1]] = θ_sp_a[probs.gnep.inds["λ", 1]]
+                gnep_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
+                gnep_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
+                gnep_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
+                gnep_init = [gnep_init; x0]
+                @info "sp->gnep (6)..."
+                gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
+
+                if gnep_success
+                    #@info "sp->gnep success 6"
+                    want_gnep = false
+                    valid_Z[6] = probs.extract_gnep(θ_gnep)
+
+                    if want_bilevel
+                        # initialized from gnep which was initialized from sp:
+                        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+                        bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
+                        bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
+                        bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
+                        bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
+                        bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
+                        bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
+                        @info "sp->gnep->bilevel (3)..."
+                        bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
+
+                        if bilevel_success
+                            #@info "sp->gnep->bilevel success 3"
+                            valid_Z[3] = probs.extract_bilevel(θ_bilevel)
+                        end
+                    end
+                else
+                    if want_bilevel
+                        # initialized from sp:
+                        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+                        bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
+                        bilevel_init[probs.bilevel.inds["λ", 1]] = θ_sp_a[probs.gnep.inds["λ", 1]]
+                        bilevel_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
+                        bilevel_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
+                        bilevel_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
+                        bilevel_init[probs.bilevel.inds["w", 0]] = x0
+                        #bilevel_init = [bilevel_init; x0]
+                        @info "sp->bilevel (4)..."
+                        bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
+
+                        if bilevel_success
+                            #@info "sp->bilevel success 4"
+                            valid_Z[4] = probs.extract_bilevel(θ_bilevel)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    sorted_Z = sort(collect(valid_Z), by=x -> x[1])
+    lowest_preference, Z = sorted_Z[1] # best pair
+
+    @info "Success $lowest_preference"
+
+    P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
+    U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
+    P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
+    U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
+
+    gd = col(Z.Xa, Z.Xb, probs.params.r)
+    h = responsibility(Z.Xa, Z.Xb)
+    gd_both = [gd - l.(h) gd - l.(-h) gd]
+    (; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z)
+end
+
+function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
+    results = Dict()
+    for t = 1:T
+        @info "Step $t:"
+        #r = solve_seq(probs, x0)
+        r = solve_seq_adaptive(probs, x0)
+        x0a = r.P1[1, :]
+        x0b = r.P2[1, :]
+        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z)
+        x0 = [x0a; x0b]
+    end
+    results
+end
+
+function animate(probs, sim_results; save=false)
+    rad = sqrt(probs.params.r) / 2
+    lat = probs.params.lat_max + rad
+    (f, ax, XA, XB, lat) = visualize(; rad=rad, lat=lat)
+    display(f)
+    T = length(sim_results)
+
+    if save
+        record(f, "test.mp4", 1:T; framerate=20) do t
+            update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
+            ax.title = string(t)
+        end
+    else
+        for t in 1:T
+            update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
+            ax.title = string(t)
+            sleep(1e-2)
+        end
+    end
+end
+
+function visualize(; rad=0.5, lat=6.0)
+    f = Figure(resolution=(1000, 1000))
+    ax = Axis(f[1, 1], aspect=DataAspect())
+
+    lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
+    lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
+
+    XA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
+    XB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
+
+    circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
+    circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
+    lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=5)
+    lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=5)
+
+    for t in 1:10
+        lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
+        lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
+    end
+
+    return (f, ax, XA, XB, lat)
+end
+
+function update_visual!(ax, XA, XB, x0, P1, P2; T=10, lat=6.0)
+    XA[0][1][] = x0[1]
+    XA[0][2][] = x0[2]
+    XB[0][1][] = x0[5]
+    XB[0][2][] = x0[6]
+
+    for l in 1:T
+        XA[l][1][] = P1[l, 1]
+        XA[l][2][] = P1[l, 2]
+        XB[l][1][] = P2[l, 1]
+        XB[l][2][] = P2[l, 2]
+    end
+
+    xlims!(ax, -2 * lat, 2 * lat)
+    ylims!(ax, x0[6] - lat, maximum([P1[T, 2], P2[T, 2]]) + lat)
+end
+
+function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
+    x_inds = 1:12*T
+    function extract(θ; x_inds=x_inds, T=T)
+        Z = θ[x_inds]
+        @inbounds Xa = @view(Z[1:4*T])
+        @inbounds Ua = @view(Z[4*T+1:6*T])
+        @inbounds Xb = @view(Z[6*T+1:10*T])
+        @inbounds Ub = @view(Z[10*T+1:12*T])
+        (; Xa, Ua, Xb, Ub)
+    end
+    Z = extract(θ)
+
+    (f, ax, XA, XB, lat) = visualize(; lat=lat_pos_max)
+    display(f)
+
+    P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
+    U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
+    P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
+    U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
+
+    update_visual!(ax, XA, XB, x0, P1, P2; T=T, lat=lat_pos_max)
+
+    if t > 0
+        ax.title = string(t)
+    end
+end
+
+
+#
+#
+#
+# deprecated:
+
 function solve_seq(probs, x0)
     dummy_init = zeros(probs.gnep.top_level.n)
     X = dummy_init[probs.gnep.x_inds]
@@ -360,343 +706,4 @@ function solve_seq(probs, x0)
     h = responsibility(Z.Xa, Z.Xb)
     gd_both = [gd - l.(h) gd - l.(-h) gd]
     (; P1, P2, gd_both, h, U1, U2, dummy_init, gnep_init, bilevel_init)
-end
-
-function attempt_solve(prob, init)
-    success = true
-    result = init
-    try
-        result = solve(prob, init)
-    catch err
-        println(err)
-        success = false
-    end
-    (success, result)
-end
-
-function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=false)
-    T = probs.params.T
-    Δt = probs.params.Δt
-    cd = probs.params.cd
-    Xa = []
-    Ua = []
-    Xb = []
-    Ub = []
-    x0a = x0[1:4]
-    x0b = x0[5:8]
-    xa = x0a
-    xb = x0b
-    for t in 1:T
-        ua = cd * xa[3:4]
-        ub = cd * xb[3:4]
-        xa = pointmass(xa, ua, Δt, cd)
-        xb = pointmass(xb, ub, Δt, cd)
-        append!(Ua, ua)
-        append!(Ub, ub)
-        append!(Xa, xa)
-        append!(Xb, xb)
-    end
-    # dummy init
-    Z = (; Xa, Ua, Xb, Ub, x0a, x0b)
-    #dummy_init = zeros(probs.gnep.top_level.n)
-    dummy_init = [Xa; Ua; Xb; Ub]
-
-    bilevel_success = false
-    gnep_success = false
-    sp_success = false
-    preference_id = 0
-
-    θ_bilevel = []
-    θ_gnep = []
-    θ_sp_a = []
-    θ_sp_b = []
-
-    # preference order
-    # (if we want bilevel):
-    # 1. bilevel
-    # 2. gnep->bilevel
-    # 3. sp->gnep->bilevel
-    # 4. sp->bilevel
-    # (if we only want gnep):
-    # 5. gnep
-    # 6. sp->gnep
-    # 7. sp
-    if only_want_gnep
-        want_gnep = true
-        want_bilevel = false
-    else
-        want_gnep = false
-        want_bilevel = true
-    end
-    want_sp = false # fallback
-
-    if try_bilevel_first && want_bilevel
-        # initialized from dummy:
-        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-        bilevel_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-        bilevel_init = [bilevel_init; x0]
-        @info "Trying bilevel..."
-        bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
-
-        if bilevel_success
-            preference_id = 1
-            Z = probs.extract_bilevel(θ_bilevel)
-        else
-            want_gnep = true
-        end
-    elseif want_bilevel
-        want_gnep = true
-    end
-
-    if want_gnep
-        # initialized from dummy:
-        gnep_init = zeros(probs.gnep.top_level.n)
-        gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-        gnep_init = [gnep_init; x0]
-        @info "Trying gnep..."
-        gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
-
-        if gnep_success
-            if want_bilevel
-                # initialized from gnep:
-                bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-                bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
-                bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
-                bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
-                bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
-                bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-                bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
-                @info "Trying gnep->bilevel..."
-                bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
-
-                if bilevel_success
-                    preference_id = 2
-                    Z = probs.extract_bilevel(θ_bilevel)
-                else
-                    want_sp = true
-                end
-            else
-                preference_id = 5
-                Z = probs.extract_gnep(θ_gnep)
-            end
-        else
-            want_sp = true
-        end
-    end
-
-    if want_sp
-        # initialized from dummy:
-        # [!] need to be changed in problems.jl so this isn't such a mess
-        # !!! 348 vs 568 breaks it
-        # !!! Ordering of x_w changes because:
-        # 1p: [x1=>1:60 λ1,s1=>61:280, w=>281:348]
-        # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568
-        sp_a_init = zeros(probs.gnep.top_level.n)
-        sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
-        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60] = [Xb; Ub]
-        sp_a_init[probs.sp_a.top_level.n+61:probs.sp_a.top_level.n+68] = x0 # right now parameters are expected to be contiguous
-        #sp_a_init = [sp_a_init; x0]; 
-
-        @info "Trying sp_a..."
-        θ_sp_a_success, θ_sp_a = attempt_solve(probs.gnep, gnep_init)
-        #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-        # if it fails:
-        #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-        # swapping b for a:
-        sp_b_init = zeros(probs.gnep.top_level.n)
-        sp_b_init[probs.sp_b.x_inds] = [Xb; Ub]
-        sp_b_init[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60] = [Xa; Ua]
-        sp_b_init[probs.sp_b.top_level.n+61:probs.sp_b.top_level.n+68] = [x0[5:8]; x0[1:4]]
-        #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
-
-        @info "Trying sp_b..."
-        θ_sp_b_success, θ_sp_b = attempt_solve(probs.sp_a, sp_b_init)
-        #show_me([θ_sp_b[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60]; θ_sp_b[probs.sp_b.x_inds]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-        # if it fails:
-        #show_me([safehouse.w[1:60]; safehouse.θ_out[probs.sp_b.x_inds]], [safehouse.w[65:68]; safehouse.w[61:64]]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)    
-
-        sp_success = θ_sp_a_success && θ_sp_b_success
-
-        if sp_success
-            if want_gnep
-                # initialized from θ_sp_a and θ_sp_b:
-                gnep_init = zeros(probs.gnep.top_level.n)
-                gnep_init[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
-                gnep_init[probs.bilevel.inds["λ", 1]] = θ_sp_a[probs.gnep.inds["λ", 1]]
-                gnep_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
-                gnep_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
-                gnep_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
-                gnep_init = [gnep_init; x0]
-                @info "Trying sp->gnep..."
-                gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
-
-                if gnep_success
-                    if want_bilevel
-                        # initialized from gnep which was initialized from sp:
-                        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-                        bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
-                        bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
-                        bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
-                        bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
-                        bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-                        bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
-                        @info "Trying sp->gnep->bilevel..."
-                        bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
-
-                        if bilevel_success
-                            preference_id = 3
-                            Z = probs.extract_bilevel(θ_bilevel)
-                        else
-                            want_sp = true
-                        end
-                    else
-                        preference_id = 6
-                        want_gnep = false
-                        Z = probs.extract_gnep(θ_gnep)
-                    end
-                else
-                    if want_bilevel
-                        # initialized from sp:
-                        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-                        bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
-                        bilevel_init[probs.bilevel.inds["λ", 1]] = θ_sp_a[probs.gnep.inds["λ", 1]]
-                        bilevel_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
-                        bilevel_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
-                        bilevel_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
-                        bilevel_init[probs.bilevel.inds["w", 0]] = x0
-                        #bilevel_init = [bilevel_init; x0]
-                        @info "Trying sp->bilevel..."
-                        bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
-
-                        if bilevel_success
-                            preference_id = 4
-                            Z = probs.extract_bilevel(θ_bilevel)
-                        end
-                    else
-                        preference_id = 7
-                        θ_accepted = θ_sp
-
-                        gnep_like = zeros(probs.gnep.top_level.n)
-                        gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
-                        gnep_init = [gnep_init; x0]
-                        Z = probs.extract_gnep(gnep_like)
-                    end
-                end
-            end
-        end
-    end
-
-    @info "$preference_id"
-
-    P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
-    U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
-    P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
-    U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
-
-    gd = col(Z.Xa, Z.Xb, probs.params.r)
-    h = responsibility(Z.Xa, Z.Xb)
-    gd_both = [gd - l.(h) gd - l.(-h) gd]
-    (; P1, P2, gd_both, h, U1, U2, preference_id, bilevel_success, gnep_success, sp_success, θ_bilevel, θ_gnep, θ_sp_a, θ_sp_b)
-end
-
-function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
-    results = Dict()
-    for t = 1:T
-        @info "Simulation step $t"
-        #r = solve_seq(probs, x0)
-        r = solve_seq_adaptive(probs, x0)
-        x0a = r.P1[1, :]
-        x0b = r.P2[1, :]
-        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h)
-        x0 = [x0a; x0b]
-    end
-    results
-end
-
-function animate(probs, sim_results; save=false)
-    rad = sqrt(probs.params.r) / 2
-    lat = probs.params.lat_max + rad
-    (f, ax, XA, XB, lat) = visualize(; rad=rad, lat=lat)
-    display(f)
-    T = length(sim_results)
-
-    if save
-        record(f, "test.mp4", 1:T; framerate=20) do t
-            update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
-            ax.title = string(t)
-        end
-    else
-        for t in 1:T
-            update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
-            ax.title = string(t)
-            sleep(1e-2)
-        end
-    end
-end
-
-function visualize(; rad=0.5, lat=6.0)
-    f = Figure(resolution=(1000, 1000))
-    ax = Axis(f[1, 1], aspect=DataAspect())
-
-    lines!(ax, [-lat, -lat], [-10.0, 300.0], color=:black)
-    lines!(ax, [+lat, +lat], [-10.0, 300.0], color=:black)
-
-    XA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
-    XB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
-
-    circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
-    circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
-    lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=5)
-    lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=5)
-
-    for t in 1:10
-        lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
-        lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
-    end
-
-    return (f, ax, XA, XB, lat)
-end
-
-function update_visual!(ax, XA, XB, x0, P1, P2; T=10, lat=6.0)
-    XA[0][1][] = x0[1]
-    XA[0][2][] = x0[2]
-    XB[0][1][] = x0[5]
-    XB[0][2][] = x0[6]
-
-    for l in 1:T
-        XA[l][1][] = P1[l, 1]
-        XA[l][2][] = P1[l, 2]
-        XB[l][1][] = P2[l, 1]
-        XB[l][2][] = P2[l, 2]
-    end
-
-    xlims!(ax, -2 * lat, 2 * lat)
-    ylims!(ax, x0[6] - lat, maximum([P1[T, 2], P2[T, 2]]) + lat)
-end
-
-function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
-    x_inds = 1:12*T
-    function extract(θ; x_inds=x_inds, T=T)
-        Z = θ[x_inds]
-        @inbounds Xa = @view(Z[1:4*T])
-        @inbounds Ua = @view(Z[4*T+1:6*T])
-        @inbounds Xb = @view(Z[6*T+1:10*T])
-        @inbounds Ub = @view(Z[10*T+1:12*T])
-        (; Xa, Ua, Xb, Ub)
-    end
-    Z = extract(θ)
-
-    (f, ax, XA, XB, lat) = visualize(; lat=lat_pos_max)
-    display(f)
-
-    P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
-    U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
-    P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
-    U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
-
-    update_visual!(ax, XA, XB, x0, P1, P2; T=T, lat=lat_pos_max)
-
-    if t > 0
-        ax.title = string(t)
-    end
 end
