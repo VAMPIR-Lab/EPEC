@@ -284,8 +284,8 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
     xa = x0a
     xb = x0b
     for t in 1:T
-        ua = cd * xa[3:4]
-        ub = cd * xb[3:4]
+        ua = [0;0]#-cd * xa[3:4]
+        ub = [0;0]#-cd * xb[3:4]
         xa = pointmass(xa, ua, Δt, cd)
         xb = pointmass(xb, ub, Δt, cd)
         append!(Ua, ua)
@@ -521,7 +521,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
     results
 end
 
-function animate(probs, sim_results; save=false)
+function animate(probs, sim_results; save=false, filename="test.mp4")
     rad = sqrt(probs.params.r) / 2
     lat = probs.params.lat_max + rad
     (f, ax, XA, XB, lat) = visualize(; rad=rad, lat=lat)
@@ -529,7 +529,7 @@ function animate(probs, sim_results; save=false)
     T = length(sim_results)
 
     if save
-        record(f, "test.mp4", 1:T; framerate=20) do t
+        record(f, filename, 1:T; framerate=20) do t
             update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
             ax.title = string(t)
         end
