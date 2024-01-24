@@ -306,17 +306,9 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
         convergence_tolerance=1e-7
     )
 
-    #if status != PATHSolver.MCP_Solved && silent
-    #    return solve_top_level(mcp, bounds, θ; silent=false)
-    #end
-
     if status != PATHSolver.MCP_Solved
-        if status == PATHSolver.MCP_NoProgress && info.residual < 1e-4
-            # continue
-        else 
-            #@infiltrate
-            throw(error("Top-level Solver failure"))
-        end
+        #@infiltrate
+        throw(error("Top-level Solver failure"))
     end
 
     θF[1:n] .= θ_out
