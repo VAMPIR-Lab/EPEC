@@ -1,4 +1,4 @@
-#todo realized cost
+#todo realized cost DONE
 #todo randomized initial conditions DONE
 #compare: sp, gnep, bilevel (shared brain)
 #if it works, also compare bilevel (distributed brain)
@@ -22,13 +22,11 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-
-sample_size = 100;
-
+sample_size = 2;
+r_offset_max = 3.0; # maximum distance between P1 and P2
+long_vel_max = 2.0; # maximum longitudunal velocity
 lat_max = probs.params.lat_max;
 r_offset_min = probs.params.r;
-r_offset_max = 5.0; # maximum distance desired
-long_vel_max = 2.0;
 
 # choose random P1 lateral position inside the lane limits, long pos = 0
 a_lat_pos0_arr = -lat_max .+ 2 * lat_max .* rand(MersenneTwister(), sample_size) # .5 .* ones(sample_size)
@@ -61,6 +59,37 @@ b_vel0_arr = hcat(zeros(sample_size), long_vel_max .* rand(MersenneTwister(), sa
 
 x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
 
+# uuh
+x0s = Dict{Int,Vector{Float64}}()
+
+for (index, row) in enumerate(eachrow(x0_arr))
+    x0s[index] = row
+end
+sim_results = Dict()
+costs = Dict()
+
+# how to multithread?
+for (index, x0) in x0s
+    results = solve_simulation(probs, 50; x0, only_want_gnep=true)
+    z_arr = zeros(length(results), 12)
+
+    for t in eachindex(results)
+        z_arr[t, 1:4] = results[t].x0[1:4]
+        z_arr[t, 5:6] = results[t].U1[1, :]
+        z_arr[t, 7:10] = results[t].x0[5:8]
+        z_arr[t, 11:12] = results[t].U2[1, :]
+    end
+    Z = [z_arr[:]; zeros(8)] # making it work with f1(Z) and f2(Z)
+    a_cost = probs.OP1.f(Z)
+    b_cost = probs.OP2.f(Z)
+    sim_results_dict[index] = results
+    costs[index] = [a_cost, b_cost]
+end
+
+#using Threads
+#num_threads = Threads.nthreads()
+
+#x0 = [1., 3, 0, 1, -1, 2, 0, 1.5]
 #sample = rand(1:sample_size)
 #x0 = x0_arr[sample, :];
 
@@ -69,7 +98,7 @@ x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
 #display(f)
 #update_visual!(ax, XA, XB, x0, P1, P2; T=probs.params.T, lat=lat)
 
-#sim_results = solve_simulation(probs, 200; x0, only_want_gnep=true);
+#sim_results = solve_simulation(probs, 50; x0, only_want_gnep=true);
 #animate(probs, sim_results; save=false);
 
 #prefs = zeros(Int, length(sim_results))
@@ -79,3 +108,16 @@ x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
 #end
 
 #histogram(prefs, bins=1:9, xlabel="Type", ylabel="Frequency")
+
+#z_arr = zeros(length(sim_results), 12)
+
+#for t in eachindex(sim_results)
+#    z_arr[t, 1:4] = sim_results[t].x0[1:4]
+#    z_arr[t, 5:6] = sim_results[t].U1[1, :]
+#    z_arr[t, 7:10] = sim_results[t].x0[5:8]
+#    z_arr[t, 11:12] = sim_results[t].U2[1, :]
+#end
+#Z = [z_arr[:]; zeros(8)] # making it work with f1(Z) and f2(Z)
+
+#a_cost = probs.OP1.f(Z)
+#b_cost = probs.OP2.f(Z)
