@@ -116,7 +116,7 @@ end
 # save data
 using JLD2
 
-jldsave("example.jld2"; x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs)
+jldsave("2024-01-25.jld2"; x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs)
 
 bilevel_costs_arr = []
 gnep_costs_arr = []
