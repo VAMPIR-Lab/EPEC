@@ -1,7 +1,7 @@
 using EPEC
 using GLMakie
 using Plots
-include("../../examples/racing.jl")
+include("../../racing/racing.jl")
 
 probs = setup(; T=10,
     Δt=0.1,

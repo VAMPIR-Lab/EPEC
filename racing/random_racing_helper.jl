@@ -1,51 +1,8 @@
-#todo realized cost DONE
-#todo randomized initial conditions DONE
-#compare: sp, gnep, bilevel (shared brain)
-#if it works, also compare bilevel (distributed brain)
-
 using Random
-using EPEC
-using GLMakie
-using Plots
-using Dates
-using JLD2
 using Statistics
 
-include("../examples/racing.jl")
-
-probs = setup(; T=10,
-    Δt=0.1,
-    r=1.0,
-    α1=1e-1,
-    α2=1e-4,
-    β=1e0, #.5, # sensitive to high values
-    cd=0.2, #0.25,
-    u_max_nominal=1.0,
-    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
-    box_length=5.0,
-    box_width=2.0,
-    lat_max=1.5);
-
-is_x0s_from_file = true;
-data_dir = "data"
-init_filename = "x0s_1000samples_2024-01-25_2315.jld2";
-sample_size = 1000;
-time_steps = 100;
-r_offset_max = 5.0; # maximum distance between P1 and P2
-long_vel_max = 3.0; # maximum longitudunal velocity
-lat_max = probs.params.lat_max;
-r_offset_min = probs.params.r;
-
-x0s = Dict{Int,Vector{Float64}}()
-
-if (is_x0s_from_file)
-    # WARNING params not loaded from file
-    init_file = jldopen("$(data_dir)/$(init_filename)", "r")
-    x0s = init_file["x0s"]
-	#@infiltrate
-	#Plots.scatter(x0_arr[:, 1], x0_arr[:, 2], aspect_ratio=:equal, legend=false)
-    #Plots.scatter!(x0_arr[:, 5], x0_arr[:, 6], aspect_ratio=:equal, legend=false)
-else
+# generate x0s
+function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, long_vel_max)
     # choose random P1 lateral position inside the lane limits, long pos = 0
     a_lat_pos0_arr = -lat_max .+ 2 * lat_max .* rand(MersenneTwister(), sample_size) # .5 .* ones(sample_size)
     # fix P1 longitudinal pos at 0
@@ -80,14 +37,8 @@ else
     for (index, row) in enumerate(eachrow(x0_arr))
         x0s[index] = row
     end
-
-    jldsave("$(data_dir)/x0s_$(sample_size)samples_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; x0s, lat_max, r_offset_min, r_offset_max, long_vel_max)
+    x0s
 end
-
-gnep_results = Dict()
-bilevel_results = Dict()
-gnep_costs = Dict()
-bilevel_costs = Dict()
 
 # detailed cost
 function f1_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
@@ -160,43 +111,6 @@ function compute_realized_cost(res)
     (; a_cost, b_cost, a_cost_breakdown, b_cost_breakdown)
 end
 
-start = time()
-# how to multithread?
-#using Threads
-#num_threads = Threads.nthreads()
-for (index, x0) in x0s
-    @info "Solving $index: $x0"
-
-    try
-        gnep_res = solve_simulation(probs, time_steps; x0, only_want_gnep=true)
-        costs = compute_realized_cost(gnep_res)
-        gnep_results[index] = gnep_res
-        gnep_costs[index] = costs
-    catch err
-        @info "gnep failed $index: $x0"
-        println(err)
-    end
-
-    try
-        bilevel_res = solve_simulation(probs, time_steps; x0, only_want_gnep=false)
-        costs = compute_realized_cost(bilevel_res)
-
-        bilevel_results[index] = bilevel_res
-        bilevel_costs[index] = costs
-    catch err
-        @info "bilevel failed $index: $x0"
-        println(err)
-    end
-end
-elapsed = time() - start
-
-# save
-if is_x0s_from_file
-    jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
-else
-    jldsave("$(data_dir)/results_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; params=probs.params, x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
-end
-
 # statistics
 function extract_costs(gnep_costs, bilevel_costs)
     gnep_cost_arr = []
@@ -214,7 +128,7 @@ function extract_costs(gnep_costs, bilevel_costs)
             push!(gnep_lane_cost_arr, [gnep_cost.a_cost_breakdown.lane_cost, gnep_cost.b_cost_breakdown.lane_cost])
             push!(gnep_control_cost_arr, [gnep_cost.a_cost_breakdown.control_cost, gnep_cost.b_cost_breakdown.control_cost])
             push!(gnep_terminal_cost_arr, [gnep_cost.a_cost_breakdown.terminal_cost, gnep_cost.b_cost_breakdown.terminal_cost])
-            push!(bilevel_cost_arr, [bilevel_costs[index].a_cost, bilevel_costs[index].b_cost_breakdown.cost])
+            push!(bilevel_cost_arr, [bilevel_costs[index].a_cost, bilevel_costs[index].b_cost])
             push!(bilevel_lane_cost_arr, [bilevel_costs[index].a_cost_breakdown.lane_cost, bilevel_costs[index].b_cost_breakdown.lane_cost])
             push!(bilevel_control_cost_arr, [bilevel_costs[index].a_cost_breakdown.control_cost, bilevel_costs[index].b_cost_breakdown.control_cost])
             push!(bilevel_terminal_cost_arr, [bilevel_costs[index].a_cost_breakdown.terminal_cost, bilevel_costs[index].b_cost_breakdown.terminal_cost])
@@ -225,23 +139,21 @@ function extract_costs(gnep_costs, bilevel_costs)
 
     return (; gnep, bilevel)
 end
-costs = extract_costs(gnep_costs, bilevel_costs)
 
+function print_mean_min_max(baseline_cost, other_cost)
+    P1_baseline_cost = [v[1] for v in baseline_cost]
+    P1_other_cost = [v[1] for v in other_cost]
+    P2_baseline_cost = [v[2] for v in baseline_cost]
+    P2_other_cost = [v[2] for v in other_cost]
 
-P1_gnep_costs = [v[1] for v in costs.gnep.total]
-P1_bilevel_costs = [v[1] for v in costs.bilevel.total]
-P2_gnep_costs = [v[2] for v in costs.gnep.total]
-P2_bilevel_costs = [v[2] for v in costs.bilevel.total]
-
-# bilevel vs gnep
-P1_cost_diff = P1_bilevel_costs .- P1_gnep_costs
-P2_cost_diff = P2_bilevel_costs .- P2_gnep_costs
-P1_rel_cost_diff = P1_cost_diff ./ abs.(P1_gnep_costs)
-P2_rel_cost_diff = P2_cost_diff ./ abs.(P2_gnep_costs)
-println("					mean 		std 			min			max")
-println("P1 cost \"bilevel wrt gnep\" abs :  $(mean(P1_cost_diff))  $(std(P1_cost_diff))  $(minimum(P1_cost_diff))  $(maximum(P1_cost_diff))")
-println("P2 cost \"bilevel wrt gnep\" abs :  $(mean(P2_cost_diff))  $(std(P2_cost_diff))  $(minimum(P2_cost_diff))  $(maximum(P2_cost_diff))")
-println("P1 cost \"bilevel wrt gnep\" rel%:  $(mean(P1_rel_cost_diff)*100)  $(std(P1_rel_cost_diff)*100)  $(minimum(P1_rel_cost_diff)*100)  $(maximum(P1_rel_cost_diff)*100)")
-println("P2 cost \"bilevel wrt gnep\" rel%:  $(mean(P2_rel_cost_diff)*100)  $(std(P2_rel_cost_diff)*100)  $(minimum(P2_rel_cost_diff)*100)  $(maximum(P2_rel_cost_diff)*100)")
-
-
+    # bilevel vs gnep
+    P1_cost_diff = P1_other_cost .- P1_baseline_cost
+    P2_cost_diff = P2_other_cost .- P2_baseline_cost
+    P1_rel_cost_diff = P1_cost_diff ./ abs.(P1_baseline_cost)
+    P2_rel_cost_diff = P2_cost_diff ./ abs.(P2_baseline_cost)
+    println("		mean 		        std 		    min		        max")
+    println("P1 Δcost abs :  $(mean(P1_cost_diff))  $(std(P1_cost_diff))  $(minimum(P1_cost_diff))  $(maximum(P1_cost_diff))")
+    println("P2 Δcost abs :  $(mean(P2_cost_diff))  $(std(P2_cost_diff))  $(minimum(P2_cost_diff))  $(maximum(P2_cost_diff))")
+    println("P1 Δcost rel%:  $(mean(P1_rel_cost_diff)*100)  $(std(P1_rel_cost_diff)*100)  $(minimum(P1_rel_cost_diff)*100)  $(maximum(P1_rel_cost_diff)*100)")
+    println("P2 Δcost rel%:  $(mean(P2_rel_cost_diff)*100)  $(std(P2_rel_cost_diff)*100)  $(minimum(P2_rel_cost_diff)*100)  $(maximum(P2_rel_cost_diff)*100)")
+end
