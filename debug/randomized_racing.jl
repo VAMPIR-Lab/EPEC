@@ -22,7 +22,8 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-sample_size = 1000;
+sample_size = 100;
+time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 long_vel_max = 2.0; # maximum longitudunal velocity
 lat_max = probs.params.lat_max;
@@ -85,6 +86,7 @@ function compute_realized_cost(res)
     (a_cost, b_cost)
 end
 
+start = time()
 # how to multithread?
 #using Threads
 #num_threads = Threads.nthreads()
@@ -92,7 +94,7 @@ for (index, x0) in x0s
     @info "Solving $index: $x0"
 
     try
-        gnep_res = solve_simulation(probs, 50; x0, only_want_gnep=true)
+        gnep_res = solve_simulation(probs, time_steps; x0, only_want_gnep=true)
         gnep_a_cost, gnep_b_cost = compute_realized_cost(gnep_res)
         gnep_results[index] = gnep_res
         gnep_costs[index] = [gnep_a_cost, gnep_b_cost]
@@ -102,7 +104,7 @@ for (index, x0) in x0s
     end
 
     try
-        bilevel_res = solve_simulation(probs, 50; x0, only_want_gnep=false)
+        bilevel_res = solve_simulation(probs, time_steps; x0, only_want_gnep=false)
         bilevel_a_cost, bilevel_b_cost = compute_realized_cost(bilevel_res)
 
         bilevel_results[index] = bilevel_res
@@ -112,11 +114,12 @@ for (index, x0) in x0s
         println(err)
     end
 end
+elapsed = time() - start
 
 # save data
 using JLD2
 
-jldsave("2024-01-25.jld2"; x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs)
+jldsave("2024-01-25.jld2"; x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
 
 bilevel_costs_arr = []
 gnep_costs_arr = []
