@@ -2,8 +2,8 @@
 #todo randomized initial conditions DONE
 #compare: sp, gnep, bilevel (shared brain) DONE (except sp)
 #if it works, also compare bilevel (distributed brain)
-# save at intervals
-#ivestigate max min huge outliers
+# save at intervals DONE
+#ivestigate max min huge outliers DONE
 
 using EPEC
 using GLMakie
@@ -18,7 +18,7 @@ include("random_racing_helper.jl")
 probs = setup(; T=10,
     Δt=0.1,
     r=1.0,
-    α1=1e-1,
+    α1=1e-2,
     α2=1e-4,
     β=1e0, #.5, # sensitive to high values
     cd=0.2, #0.25,
@@ -31,10 +31,10 @@ probs = setup(; T=10,
 is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
-init_filename = "x0s_100samples_2024-01-26_0912";
-results_filename = "results_x0s_1000samples_2024-01-25_2315_2024-01-26_0125_100steps";
-sample_size = 10;
-time_steps = 50;
+init_filename = "x0s_100samples_2024-01-26_1321";
+results_filename = "results_x0s_100samples_2024-01-26_1321_2024-01-26_1343_150steps";
+sample_size = 100;
+time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
@@ -52,7 +52,8 @@ if (is_x0s_from_file)
     #Plots.scatter!(x0_arr[:, 5], x0_arr[:, 6], aspect_ratio=:equal, legend=false)
 else
     x0s = generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
-    jldsave("$(data_dir)/x0s_$(sample_size)samples_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; x0s, lat_max, r_offset_min, r_offset_max,  a_long_vel_max, b_long_vel_delta_max)
+    init_filename = "x0s_$(sample_size)samples_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))"
+    jldsave("$(data_dir)/$(init_filename).jld2"; x0s, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
 end
 
 sp_results = []
@@ -78,38 +79,34 @@ else
         try
             sp_res = solve_simulation(probs, time_steps; x0, only_want_sp=true)
             sp_results[index] = sp_res
-        catch err
+        catch erro
             @info "sp failed $index: $x0"
-            println(err)
+            println(erro)
         end
 
         try
             gnep_res = solve_simulation(probs, time_steps; x0, only_want_gnep=true)
             gnep_results[index] = gnep_res
-        catch err
+        catch erro
             @info "gnep failed $index: $x0"
-            println(err)
+            println(erro)
         end
 
         try
             bilevel_res = solve_simulation(probs, time_steps; x0, only_want_gnep=false)
             bilevel_results[index] = bilevel_res
-        catch err
+        catch erro
             @info "bilevel failed $index: $x0"
-            println(err)
+            println(erro)
         end
 
         #next!(prog)
     end
-    #elapsed = time() - start
+    elapsed = time() - start
     #finish!(prog)
 
     # save
-    if is_x0s_from_file
-        jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, sp_results, gnep_results, bilevel_results, elapsed)
-    else
-        jldsave("$(data_dir)/results_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; params=probs.params, x0s, sp_results, gnep_results, bilevel_results, elapsed)
-    end
+    jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, sp_results, gnep_results, bilevel_results, elapsed)
 end
 
 # only look up to time_steps
@@ -129,40 +126,45 @@ for (index, bilevel_res) in bilevel_results
     bilevel_costs[index] = compute_realized_cost(Dict(i => bilevel_res[i] for i in 1:time_steps))
 end
 
-# sp fails so much!
+# sp fails so much, so ignoring for now..
 all_costs = extract_costs(gnep_costs, gnep_costs, bilevel_costs)
 
-@info "total Δcost"
+@info "total Δcost = bilevel - gnep"
 Δcost_total = compute_player_Δcost(all_costs.gnep.total, all_costs.bilevel.total)
 print_mean_min_max(Δcost_total.P1_abs, Δcost_total.P2_abs, Δcost_total.P1_rel, Δcost_total.P2_rel)
 
-@info "lane Δcost"
+@info "lane Δcost = bilevel - gnep"
 Δcost_lane = compute_player_Δcost(all_costs.gnep.lane, all_costs.bilevel.lane)
 print_mean_min_max(Δcost_lane.P1_abs, Δcost_lane.P2_abs, Δcost_lane.P1_rel, Δcost_lane.P2_rel)
 
-@info "control Δcost:"
+@info "control Δcost = bilevel - gnep"
 Δcost_control = compute_player_Δcost(all_costs.gnep.control, all_costs.bilevel.control)
 print_mean_min_max(Δcost_control.P1_abs, Δcost_control.P2_abs, Δcost_control.P1_rel, Δcost_control.P2_rel)
 
-@info "terminal Δcost:"
+@info "terminal Δcost = bilevel - gnep"
 Δcost_terminal = compute_player_Δcost(all_costs.gnep.terminal, all_costs.bilevel.terminal)
 print_mean_min_max(Δcost_terminal.P1_abs, Δcost_terminal.P2_abs, Δcost_terminal.P1_rel, Δcost_terminal.P2_rel)
 
 
 # best
-P1_best_ind = all_costs.ind[Δcost_total.P1_max_ind]
-P2_best_ind = all_costs.ind[Δcost_total.P2_max_ind] 
+best_ind_P1 = all_costs.ind[Δcost_total.P1_max_ind]
+best_ind_P2 = all_costs.ind[Δcost_total.P2_max_ind]
+@assert(best_ind_P1 == best_ind_P2)
 ## worst
-P1_worst_ind = all_costs.ind[Δcost_total.P1_min_ind] 
-P2_worst_ind = all_costs.ind[Δcost_total.P2_min_ind] 
+worst_ind_P1 = all_costs.ind[Δcost_total.P1_min_ind]
+worst_ind_P2 = all_costs.ind[Δcost_total.P2_min_ind]
+@assert(worst_ind_P1 == worst_ind_P2)
 
-animate(probs, gnep_results[P1_worst_ind]; save=false);
-animate(probs, bilevel_results[P2_worst_ind]; save=false);
+#animate(probs, gnep_results[best_ind_P1]; save=false, filename="gnep_best_case.mp4");
+#animate(probs, bilevel_results[best_ind_P1]; save=false, filename="bilevel_best_case.mp4");
+#animate(probs, gnep_results[worst_ind_P1]; save=false, filename="gnep_worst_case.mp4");
+#animate(probs, bilevel_results[worst_ind_P1]; save=false, filename="bilevel_worst_case.mp4");
 
-#prefs = zeros(Int, length(sim_results))
-#for key in keys(sim_results)
+#res = gnep_results[worst_ind_P1];
+#res = bilevel_results[worst_ind_P1];
+#prefs = zeros(Int, length(res));
+#for key in keys(res)
 #    #println("Key: $key, Pref: $(sim_results[key].lowest_preference)")
-#	prefs[key] = sim_results[key].lowest_preference;
+#	prefs[key] = res[key].lowest_preference;
 #end
-
 #histogram(prefs, bins=1:9, xlabel="Type", ylabel="Frequency")
