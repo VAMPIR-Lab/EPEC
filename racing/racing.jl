@@ -532,8 +532,13 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]
         feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]
         feasible = all(all(feasible_arr[i][1]) for i in 1:2)
-        feasible = all(all.(feasible_arr[:][1]))
-        if !feasible || any(r.P1[:, 4] .< 0) || any(r.P2[:, 4] .< 0) || any(r.P1[:, 1] .< -lat_max) || any(r.P2[:, 1] .< -lat_max) || any(r.P1[:, 1] .> lat_max) || any(r.P2[:, 1] .> lat_max)
+        #feasible = all(all.(feasible_arr[:][1]))
+        # alarming
+
+        if !feasible || any(r.P1[:, 4] .< -1e-4) || any(r.P2[:, 4] .< -1e-4) || any(r.P1[:, 1] .< -lat_max - 1e-4) || any(r.P2[:, 1] .< -lat_max - 1e-4) || any(r.P1[:, 1] .> 1e-4 + lat_max) || any(r.P2[:, 1] .> lat_max + 1e-4)
+            if (feasible)
+                @infiltrate
+            end
             throw(error("Infeasible solution :("))
             #@infiltrate
             #@infiltrate any(r.P1[:,4] .< 0)

@@ -33,8 +33,8 @@ is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_100samples_2024-01-26_0912";
 results_filename = "results_x0s_1000samples_2024-01-25_2315_2024-01-26_0125_100steps";
-sample_size = 2;
-time_steps = 2;
+sample_size = 10;
+time_steps = 50;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
@@ -58,22 +58,16 @@ end
 sp_results = []
 gnep_results = []
 bilevel_results = []
-sp_costs_arr = []
-gnep_costs_arr = []
-bilevel_costs_arr = []
 
 if is_results_from_file
     results_file = jldopen("$(data_dir)/$(results_filename).jld2", "r")
+    sp_results = results_file["sp_results"]
     gnep_results = results_file["gnep_results"]
     bilevel_results = results_file["bilevel_results"]
-    all_costs = extract_costs(results_file["sp_costs"], results_file["gnep_costs"], results_file["bilevel_costs"])
 else
     sp_results = Dict()
     gnep_results = Dict()
     bilevel_results = Dict()
-    sp_costs = Dict()
-    gnep_costs = Dict()
-    bilevel_costs = Dict()
 
     # Create a progress bar
     #prog = Progress(length(x0s), barlen=50)
@@ -83,9 +77,7 @@ else
     for (index, x0) in x0s
         try
             sp_res = solve_simulation(probs, time_steps; x0, only_want_sp=true)
-            costs = compute_realized_cost(sp_res)
             sp_results[index] = sp_res
-            sp_costs[index] = costs
         catch err
             @info "sp failed $index: $x0"
             println(err)
@@ -93,9 +85,7 @@ else
 
         try
             gnep_res = solve_simulation(probs, time_steps; x0, only_want_gnep=true)
-            costs = compute_realized_cost(gnep_res)
             gnep_results[index] = gnep_res
-            gnep_costs[index] = costs
         catch err
             @info "gnep failed $index: $x0"
             println(err)
@@ -103,10 +93,7 @@ else
 
         try
             bilevel_res = solve_simulation(probs, time_steps; x0, only_want_gnep=false)
-            costs = compute_realized_cost(bilevel_res)
-
             bilevel_results[index] = bilevel_res
-            bilevel_costs[index] = costs
         catch err
             @info "bilevel failed $index: $x0"
             println(err)
@@ -115,17 +102,35 @@ else
         #next!(prog)
     end
     #elapsed = time() - start
-    finish!(prog)
+    #finish!(prog)
 
     # save
     if is_x0s_from_file
-        jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, sp_results,sp_costs, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
+        jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, sp_results, gnep_results, bilevel_results, elapsed)
     else
-        jldsave("$(data_dir)/results_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; params=probs.params, x0s, sp_results, sp_costs, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
+        jldsave("$(data_dir)/results_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; params=probs.params, x0s, sp_results, gnep_results, bilevel_results, elapsed)
     end
-
-    all_costs = extract_costs(sp_costs, gnep_costs, bilevel_costs)
 end
+
+# only look up to time_steps
+sp_costs = Dict()
+gnep_costs = Dict()
+bilevel_costs = Dict()
+
+for (index, sp_res) in sp_results
+    sp_costs[index] = compute_realized_cost(Dict(i => sp_res[i] for i in 1:time_steps))
+end
+
+for (index, gnep_res) in gnep_results
+    gnep_costs[index] = compute_realized_cost(Dict(i => gnep_res[i] for i in 1:time_steps))
+end
+
+for (index, bilevel_res) in bilevel_results
+    bilevel_costs[index] = compute_realized_cost(Dict(i => bilevel_res[i] for i in 1:time_steps))
+end
+
+# sp fails so much!
+all_costs = extract_costs(gnep_costs, gnep_costs, bilevel_costs)
 
 @info "total Δcost"
 Δcost_total = compute_player_Δcost(all_costs.gnep.total, all_costs.bilevel.total)

@@ -29,7 +29,7 @@ x0 = [1., 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial veloci
 #	  0.569618865585001
 #	  6.604781659301143]
 
-#(; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z) = solve_seq_adaptive(probs, x0);
+(; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z) = solve_seq_adaptive(probs, x0);
 #(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
 #display(f)
 #update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
