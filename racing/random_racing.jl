@@ -15,26 +15,27 @@ using JLD2
 include("racing.jl")
 include("random_racing_helper.jl")
 
-probs = setup(; T=10,
-    Δt=0.1,
-    r=1.0,
-    α1=1e-2,
-    α2=1e-4,
-    β=1e0, #.5, # sensitive to high values
-    cd=0.2, #0.25,
-    u_max_nominal=1.0,
-    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
-    box_length=5.0,
-    box_width=2.0,
-    lat_max=1.5);
+probs = setup(; T=10, 
+	Δt = 0.1, 
+	r = 1.0, 
+	α1 = 1e-2,
+	α2 = 1e-4,
+	α3 = 1e-2,	
+	β = 1e-2, #.5, # sensitive to high values
+	cd = 0.2, #0.25,
+	u_max_nominal = 1.0, 
+	u_max_drafting = 2.5, #2.5, # sensitive to high difference over nominal 
+	box_length = 5.0,
+	box_width = 2.0,
+	lat_max = 1.5);
 
 is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_100samples_2024-01-26_1321";
 results_filename = "results_x0s_100samples_2024-01-26_1321_2024-01-26_1343_150steps";
-sample_size = 100;
-time_steps = 100;
+sample_size = 2;
+time_steps = 10;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
@@ -141,6 +142,10 @@ print_mean_min_max(Δcost_lane.P1_abs, Δcost_lane.P2_abs, Δcost_lane.P1_rel, �
 Δcost_control = compute_player_Δcost(all_costs.gnep.control, all_costs.bilevel.control)
 print_mean_min_max(Δcost_control.P1_abs, Δcost_control.P2_abs, Δcost_control.P1_rel, Δcost_control.P2_rel)
 
+@info "velocity Δcost = bilevel - gnep"
+Δcost_velocity = compute_player_Δcost(all_costs.gnep.velocity, all_costs.bilevel.velocity)
+print_mean_min_max(Δcost_velocity.P1_abs, Δcost_velocity.P2_abs, Δcost_velocity.P1_rel, Δcost_velocity.P2_rel)
+
 @info "terminal Δcost = bilevel - gnep"
 Δcost_terminal = compute_player_Δcost(all_costs.gnep.terminal, all_costs.bilevel.terminal)
 print_mean_min_max(Δcost_terminal.P1_abs, Δcost_terminal.P2_abs, Δcost_terminal.P1_rel, Δcost_terminal.P2_rel)
@@ -149,11 +154,11 @@ print_mean_min_max(Δcost_terminal.P1_abs, Δcost_terminal.P2_abs, Δcost_termin
 # best
 best_ind_P1 = all_costs.ind[Δcost_total.P1_max_ind]
 best_ind_P2 = all_costs.ind[Δcost_total.P2_max_ind]
-@assert(best_ind_P1 == best_ind_P2)
+#@assert(best_ind_P1 == best_ind_P2)
 ## worst
 worst_ind_P1 = all_costs.ind[Δcost_total.P1_min_ind]
 worst_ind_P2 = all_costs.ind[Δcost_total.P2_min_ind]
-@assert(worst_ind_P1 == worst_ind_P2)
+#@assert(worst_ind_P1 == worst_ind_P2)
 
 #animate(probs, gnep_results[best_ind_P1]; save=false, filename="gnep_best_case.mp4");
 #animate(probs, bilevel_results[best_ind_P1]; save=false, filename="bilevel_best_case.mp4");

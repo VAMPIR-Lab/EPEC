@@ -5,7 +5,7 @@ const xdim = 4
 const udim = 2
 
 # P1 wants to make forward progress and stay in center of lane.
-function f1(Z; α1=1.0, α2=0.0, β=1.0)
+function f1(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
@@ -13,38 +13,34 @@ function f1(Z; α1=1.0, α2=0.0, β=1.0)
     @inbounds Ub = @view(Z[10*T+1:12*T])
 
     #@infiltrate
-    running_cost = 0.0
+    cost = 0.0
 
     for t in 1:T
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
+        @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
         @inbounds ua = @view(Ua[udim*(t-1)+1:udim*t])
-        running_cost += α1 * xa[1]^2 + α2 * ua' * ua
+        cost += α1 * xa[1]^2 + α2 * ua' * ua - α3 * xa[4] + β * xb[2]
     end
-    @inbounds xa = @view(Xa[xdim*(T-1)+1:xdim*T])
-    @inbounds xb = @view(Xb[xdim*(T-1)+1:xdim*T])
-    terminal_cost = β * (xb[2] - 2 * xa[2])
-    cost = running_cost + terminal_cost
+    cost
 end
 
 # P2 wants to make forward progress and stay in center of lane.
-function f2(Z; α1=1.0, α2=0.0, β=1.0)
+function f2(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
     @inbounds Xb = @view(Z[6*T+1:10*T])
     @inbounds Ub = @view(Z[10*T+1:12*T])
 
-    running_cost = 0.0
+    cost = 0.0
 
     for t in 1:T
+        @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
         @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
         @inbounds ub = @view(Ub[udim*(t-1)+1:udim*t])
-        running_cost += α1 * xb[1]^2 + α2 * ub' * ub
+        cost += α1 * xb[1]^2 + α2 * ub' * ub - α3 * xb[4] + β * xa[2]
     end
-    @inbounds xa = @view(Xa[xdim*(T-1)+1:xdim*T])
-    @inbounds xb = @view(Xb[xdim*(T-1)+1:xdim*T])
-    terminal_cost = β * (xa[2] - 2 * xb[2])
-    cost = running_cost + terminal_cost
+    cost
 end
 
 function pointmass(x, u, Δt, cd)
@@ -166,6 +162,7 @@ function g1(Z,
         long_accel - u_max_2
         long_accel - u_max_3
         long_accel - u_max_4
+        long_accel
         long_vel
         lat_pos]
 end
@@ -207,6 +204,7 @@ function g2(Z,
         long_accel - u_max_2
         long_accel - u_max_3
         long_accel - u_max_4
+        long_accel
         long_vel
         lat_pos]
 end
@@ -216,6 +214,7 @@ function setup(; T=10,
     r=1.0,
     α1=0.01,
     α2=0.001,
+    α3=0.0,
     β=1e3,
     cd=0.2,
     u_max_nominal=2.0,
@@ -224,11 +223,11 @@ function setup(; T=10,
     box_width=1.0,
     lat_max=5.0)
 
-    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(0.0, T); fill(-lat_max, T)]
-    ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(+lat_max, T)]
+    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-2*u_max_drafting, T); fill(-5.0, T); fill(-lat_max, T)]
+    ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(Inf, T); fill(+lat_max, T)]
 
-    f1_pinned = (z -> f1(z; α1, α2, β))
-    f2_pinned = (z -> f2(z; α1, α2, β))
+    f1_pinned = (z -> f1(z; α1, α2, α3, β))
+    f2_pinned = (z -> f2(z; α1, α2, α3, β))
     g1_pinned = (z -> g1(z, Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
     g2_pinned = (z -> g2(z, Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width))
 
@@ -260,7 +259,7 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; sp_a, sp_b, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, α1, α2, β, box_length, box_width))
+    problems = (; sp_a, sp_b, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, α1, α2, α3, β, box_length, box_width))
 end
 
 function attempt_solve(prob, init)
@@ -531,17 +530,61 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         lowest_preference, Z = r.sorted_Z[1]
         z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]
         feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]
+        #lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(0.0, T); fill(-lat_max, T)]
+        #ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(+lat_max, T)]
         feasible = all(all(feasible_arr[i][1]) for i in 1:2) # I think this is fine
+        lat_max = probs.params.lat_max
 
         if !feasible || any(r.P1[:, 4] .< -1e-4) || any(r.P2[:, 4] .< -1e-4) || any(r.P1[:, 1] .< -lat_max - 1e-4) || any(r.P2[:, 1] .< -lat_max - 1e-4) || any(r.P1[:, 1] .> 1e-4 + lat_max) || any(r.P2[:, 1] .> lat_max + 1e-4)
             if (feasible)
                 # this must never trigger
-                @infiltrate
+                #@infiltrate
             end
-            throw(error("Infeasible solution! :("))
+            #@info "you actually failed"
+            #throw(error("Infeasible solution! :("))
         end
-        x0a = r.P1[1, :]
-        x0b = r.P2[1, :]
+        # instead of this clamp controls and check feasibility
+        xa = r.P1[1, :]
+        xb = r.P2[1, :]
+        ua = r.U1[1, :]
+        ub = r.U2[1, :]
+
+        ua_maxes = accel_bounds_1(xa,
+            xb,
+            probs.params.u_max_nominal,
+            probs.params.u_max_drafting,
+            probs.params.box_length,
+            probs.params.box_width)
+
+        ub_maxes = accel_bounds_2(xa,
+            xb,
+            probs.params.u_max_nominal,
+            probs.params.u_max_drafting,
+            probs.params.box_length,
+            probs.params.box_width)
+
+        ua[1] = minimum([maximum([ua[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
+        ub[1] = minimum([maximum([ub[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
+        ua[2] = minimum([ua[2], ua_maxes[1][1], ua_maxes[2][1], ua_maxes[3][1], ua_maxes[4][1]])
+        ub[2] = minimum([ub[2], ub_maxes[1][1], ub_maxes[2][1], ub_maxes[3][1], ub_maxes[4][1]])
+
+        x0a = pointmass(xa, ua, probs.params.Δt, probs.params.cd)
+        x0b = pointmass(xb, ub, probs.params.Δt, probs.params.cd)
+
+        #@infiltrate t==24
+
+        if col(x0a, x0b, probs.params.r)[1] <= 0 - 1e-4 ||
+           x0a[1] < -lat_max - 1e-4 ||
+           x0a[1] > lat_max + 1e-4 ||
+           x0b[1] < -lat_max - 1e-4 ||
+           x0b[1] > lat_max + 1e-4
+            @infiltrate
+            throw(error("Infeasible simulation :("))
+        end
+
+        #x0a = r.P1[1, :]
+        #x0b = r.P2[1, :]
+
         results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z)
         x0 = [x0a; x0b]
     end
@@ -564,7 +607,7 @@ function animate(probs, sim_results; save=false, filename="test.mp4")
         for t in 1:T
             update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
             ax.title = string(t)
-            sleep(1e-2)
+            sleep(1e-1)
         end
     end
 end

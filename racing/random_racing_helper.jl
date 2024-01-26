@@ -61,20 +61,20 @@ function f1_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
 
     lane_cost = 0.0
     control_cost = 0.0
+    velocity_cost = 0.0
+    terminal_cost = 0.0
 
     for t in 1:T
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
+        @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
         @inbounds ua = @view(Ua[udim*(t-1)+1:udim*t])
         lane_cost += α1 * xa[1]^2
         control_cost += α2 * ua' * ua
+        velocity_cost += -α3 * xa[4]
+        terminal_cost += β * xb[2] 
     end
-    running_cost = lane_cost + control_cost
-
-    @inbounds xa = @view(Xa[xdim*(T-1)+1:xdim*T])
-    @inbounds xb = @view(Xb[xdim*(T-1)+1:xdim*T])
-    terminal_cost = β * (xb[2] - 2 * xa[2])
-    cost = running_cost + terminal_cost
-    (; cost, lane_cost, control_cost, terminal_cost)
+    cost = lane_cost + control_cost + velocity_cost + terminal_cost
+    (; cost, lane_cost, control_cost, velocity_cost, terminal_cost)
 end
 
 function f2_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
@@ -86,20 +86,19 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
 
     lane_cost = 0.0
     control_cost = 0.0
+    velocity_cost = 0.0
+    terminal_cost = 0.0
 
     for t in 1:T
         @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
         @inbounds ub = @view(Ub[udim*(t-1)+1:udim*t])
         lane_cost += α1 * xb[1]^2
         control_cost += α2 * ub' * ub
+        velocity_cost += -α3 * xa[4]
+        terminal_cost += β * xa[2]
     end
-    running_cost = lane_cost + control_cost
-
-    @inbounds xa = @view(Xa[xdim*(T-1)+1:xdim*T])
-    @inbounds xb = @view(Xb[xdim*(T-1)+1:xdim*T])
-    terminal_cost = β * (xa[2] - 2 * xb[2])
-    cost = running_cost + terminal_cost
-    (; cost, lane_cost, control_cost, terminal_cost)
+    cost = lane_cost + control_cost + velocity_cost + terminal_cost
+    (; cost, lane_cost, control_cost, velocity_cost, terminal_cost)
 end
 
 function compute_realized_cost(res)
@@ -133,14 +132,17 @@ function extract_costs(sp_costs, gnep_costs, bilevel_costs)
     sp_cost_arr = []
     sp_lane_cost_arr = []
     sp_control_cost_arr = []
+    sp_velocity_cost_arr = []
     sp_terminal_cost_arr = []
     gnep_cost_arr = []
     gnep_lane_cost_arr = []
     gnep_control_cost_arr = []
+    gnep_velocity_cost_arr = []
     gnep_terminal_cost_arr = []
     bilevel_cost_arr = []
     bilevel_lane_cost_arr = []
     bilevel_control_cost_arr = []
+    bilevel_velocity_cost_arr = []
     bilevel_terminal_cost_arr = []
 
     for (index, sp_cost) in sp_costs
@@ -150,21 +152,24 @@ function extract_costs(sp_costs, gnep_costs, bilevel_costs)
                 push!(sp_cost_arr, [sp_cost.a_cost, sp_cost.b_cost])
                 push!(sp_lane_cost_arr, [sp_cost.a_cost_breakdown.lane_cost, sp_cost.b_cost_breakdown.lane_cost])
                 push!(sp_control_cost_arr, [sp_cost.a_cost_breakdown.control_cost, sp_cost.b_cost_breakdown.control_cost])
+                push!(sp_velocity_cost_arr, [sp_cost.a_cost_breakdown.velocity_cost, sp_cost.b_cost_breakdown.velocity_cost])
                 push!(sp_terminal_cost_arr, [sp_cost.a_cost_breakdown.terminal_cost, sp_cost.b_cost_breakdown.terminal_cost])
                 push!(gnep_cost_arr, [gnep_costs[index].a_cost, gnep_costs[index].b_cost])
                 push!(gnep_lane_cost_arr, [gnep_costs[index].a_cost_breakdown.lane_cost, gnep_costs[index].b_cost_breakdown.lane_cost])
                 push!(gnep_control_cost_arr, [gnep_costs[index].a_cost_breakdown.control_cost, gnep_costs[index].b_cost_breakdown.control_cost])
+                push!(gnep_velocity_cost_arr, [gnep_cost.a_cost_breakdown.velocity_cost, gnep_cost.b_cost_breakdown.velocity_cost])
                 push!(gnep_terminal_cost_arr, [gnep_costs[index].a_cost_breakdown.terminal_cost, gnep_costs[index].b_cost_breakdown.terminal_cost])
                 push!(bilevel_cost_arr, [bilevel_costs[index].a_cost, bilevel_costs[index].b_cost])
                 push!(bilevel_lane_cost_arr, [bilevel_costs[index].a_cost_breakdown.lane_cost, bilevel_costs[index].b_cost_breakdown.lane_cost])
                 push!(bilevel_control_cost_arr, [bilevel_costs[index].a_cost_breakdown.control_cost, bilevel_costs[index].b_cost_breakdown.control_cost])
+                push!(bilevel_velocity_cost_arr, [bilevel_cost.a_cost_breakdown.velocity_cost, bilevel_cost.b_cost_breakdown.velocity_cost])
                 push!(bilevel_terminal_cost_arr, [bilevel_costs[index].a_cost_breakdown.terminal_cost, bilevel_costs[index].b_cost_breakdown.terminal_cost])
             end
         end
     end
-    sp_extracted = (total=sp_cost_arr, lane=sp_lane_cost_arr, control=sp_control_cost_arr, terminal=sp_terminal_cost_arr)
-    gnep_extracted = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, terminal=gnep_terminal_cost_arr)
-    bilevel_extracted = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, terminal=bilevel_terminal_cost_arr)
+    sp_extracted = (total=sp_cost_arr, lane=sp_lane_cost_arr, control=sp_control_cost_arr, velocity=sp_velocity_cost_arr, terminal=sp_terminal_cost_arr)
+    gnep_extracted = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, velocity=gnep_velocity_cost_arr, terminal=gnep_terminal_cost_arr)
+    bilevel_extracted = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, velocity=bilevel_velocity_cost_arr, terminal=bilevel_terminal_cost_arr)
     cost = (ind=index_arr, sp=sp_extracted, gnep=gnep_extracted, bilevel=bilevel_extracted)
     cost
 end
