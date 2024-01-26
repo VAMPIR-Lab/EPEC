@@ -121,7 +121,8 @@ function extract_costs(gnep_costs, bilevel_costs)
     bilevel_lane_cost_arr = []
     bilevel_control_cost_arr = []
     bilevel_terminal_cost_arr = []
-
+    index_arr = [];
+    
     for (index, gnep_cost) in gnep_costs
         if haskey(bilevel_costs, index)
             push!(gnep_cost_arr, [gnep_cost.a_cost, gnep_cost.b_cost])
@@ -152,8 +153,8 @@ function print_mean_min_max(baseline_cost, other_cost)
     P1_rel_cost_diff = P1_cost_diff ./ abs.(P1_baseline_cost)
     P2_rel_cost_diff = P2_cost_diff ./ abs.(P2_baseline_cost)
     println("		mean 		        std 		    min		        max")
-    println("P1 Δcost abs :  $(mean(P1_cost_diff))  $(std(P1_cost_diff))  $(minimum(P1_cost_diff))  $(maximum(P1_cost_diff))")
-    println("P2 Δcost abs :  $(mean(P2_cost_diff))  $(std(P2_cost_diff))  $(minimum(P2_cost_diff))  $(maximum(P2_cost_diff))")
-    println("P1 Δcost rel%:  $(mean(P1_rel_cost_diff)*100)  $(std(P1_rel_cost_diff)*100)  $(minimum(P1_rel_cost_diff)*100)  $(maximum(P1_rel_cost_diff)*100)")
-    println("P2 Δcost rel%:  $(mean(P2_rel_cost_diff)*100)  $(std(P2_rel_cost_diff)*100)  $(minimum(P2_rel_cost_diff)*100)  $(maximum(P2_rel_cost_diff)*100)")
+    println("P1 Δcost abs :  $(mean(P1_cost_diff))  $(std(P1_cost_diff)/sqrt(length(P1_cost_diff)))  $(minimum(P1_cost_diff))  $(maximum(P1_cost_diff))")
+    println("P2 Δcost abs :  $(mean(P2_cost_diff))  $(std(P2_cost_diff)/sqrt(length(P1_cost_diff)))  $(minimum(P2_cost_diff))  $(maximum(P2_cost_diff))")
+    println("P1 Δcost rel%:  $(mean(P1_rel_cost_diff)*100)  $(std(P1_rel_cost_diff)/sqrt(length(P1_cost_diff))*100)  $(minimum(P1_rel_cost_diff)*100)  $(maximum(P1_rel_cost_diff)*100)")
+    println("P2 Δcost rel%:  $(mean(P2_rel_cost_diff)*100)  $(std(P2_rel_cost_diff)/sqrt(length(P1_cost_diff))*100)  $(minimum(P2_rel_cost_diff)*100)  $(maximum(P2_rel_cost_diff)*100)")
 end

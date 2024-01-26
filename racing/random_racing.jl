@@ -1,7 +1,9 @@
 #todo realized cost DONE
 #todo randomized initial conditions DONE
-#compare: sp, gnep, bilevel (shared brain)
+#compare: sp, gnep, bilevel (shared brain) DONE (except sp)
 #if it works, also compare bilevel (distributed brain)
+# save at intervals
+#ivestigate max min huge outliers
 
 using EPEC
 using GLMakie
@@ -25,15 +27,16 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-is_x0s_from_file = false;
+is_x0s_from_file = true;
 is_results_from_file = false;
 data_dir = "data"
-init_filename = "results_x0s_1000samples_2024-01-25_2315.jld2_2024-01-26_0125_100steps.jld2";
-results_filename = "results_x0s_1000samples_2024-01-25_2315.jld2_2024-01-26_0125_100steps.jld2";
-sample_size = 2;
-time_steps = 10;
+init_filename = "x0s_100samples_2024-01-26_0912.jld2";
+results_filename = "results_x0s_1000samples_2024-01-25_2315_2024-01-26_0125_100steps.jld2";
+sample_size = 100;
+time_steps = 200;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 long_vel_max = 3.0; # maximum longitudunal velocity
+log_vel_delta_max = 1.0 # <--
 lat_max = probs.params.lat_max;
 r_offset_min = probs.params.r;
 
@@ -56,7 +59,7 @@ bilevel_results = []
 all_costs = []
 
 if is_results_from_file
-    results_file = jldopen("$(data_dir)/$(results_filename)", "r")
+    results_file = jldopen("$(data_dir)/$(results_filename).jld2", "r")
     gnep_results = results_file["gnep_results"]
     bilevel_results = results_file["bilevel_results"]
     all_costs = extract_costs(results_file["gnep_costs"], results_file["bilevel_costs"])
@@ -67,9 +70,7 @@ else
     bilevel_costs = Dict()
 
     start = time()
-    # how to multithread?
-    #using Threads
-    #num_threads = Threads.nthreads()
+
     for (index, x0) in x0s
         @info "Solving $index: $x0"
 
@@ -109,13 +110,20 @@ end
 @info "bilevel vs gnep total cost"
 print_mean_min_max(all_costs.gnep.total, all_costs.bilevel.total)
 
+@info "bilevel vs gnep lane cost"
+print_mean_min_max(all_costs.gnep.lane, all_costs.bilevel.lane)
+
+@info "bilevel vs gnep control cost"
+print_mean_min_max(all_costs.gnep.control, all_costs.bilevel.control)
+
+@info "bilevel vs gnep terminal cost"
+print_mean_min_max(all_costs.gnep.terminal, all_costs.bilevel.terminal)
+
 #i = rand(1:sample_size); @info i; animate(probs, bilevel_results[i]; save=false);
+#prefs = zeros(Int, length(sim_results))
+#for key in keys(sim_results)
+#    #println("Key: $key, Pref: $(sim_results[key].lowest_preference)")
+#	prefs[key] = sim_results[key].lowest_preference;
+#end
 
-#@info "bilevel vs gnep lane cost"
-#print_mean_min_max(all_costs.gnep.lane, all_costs.bilevel.lane)
-
-#@info "bilevel vs gnep control cost"
-#print_mean_min_max(all_costs.gnep.control, all_costs.bilevel.control)
-
-#@info "bilevel vs gnep terminal cost"
-#print_mean_min_max(all_costs.gnep.terminal, all_costs.bilevel.terminal)
+#histogram(prefs, bins=1:9, xlabel="Type", ylabel="Frequency")
