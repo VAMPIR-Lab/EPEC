@@ -10,7 +10,7 @@ using GLMakie
 using Plots
 using Dates
 using JLD2
-using ProgressMeter
+#using ProgressMeter
 
 include("racing.jl")
 include("random_racing_helper.jl")
@@ -33,8 +33,8 @@ is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_100samples_2024-01-26_0912";
 results_filename = "results_x0s_1000samples_2024-01-25_2315_2024-01-26_0125_100steps";
-sample_size = 100;
-time_steps = 100;
+sample_size = 2;
+time_steps = 2;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
@@ -64,32 +64,32 @@ bilevel_costs_arr = []
 
 if is_results_from_file
     results_file = jldopen("$(data_dir)/$(results_filename).jld2", "r")
-    #sp_costs_arr = extract_costs(results_file["sp_costs"])
     gnep_results = results_file["gnep_results"]
     bilevel_results = results_file["bilevel_results"]
-    all_costs = extract_costs(results_file["gnep_costs"], results_file["gnep_costs"], results_file["bilevel_costs"])
+    all_costs = extract_costs(results_file["sp_costs"], results_file["gnep_costs"], results_file["bilevel_costs"])
 else
     sp_results = Dict()
     gnep_results = Dict()
     bilevel_results = Dict()
-    sp_costs_dict = Dict()
+    sp_costs = Dict()
     gnep_costs = Dict()
     bilevel_costs = Dict()
 
-    progress = Progress(length(x0s), show_percentage=true, show_bar=true, show_eta=true)
+    # Create a progress bar
+    #prog = Progress(length(x0s), barlen=50)
 
     start = time()
 
     for (index, x0) in x0s
-        #try
-        #    sp_res = solve_simulation(probs, time_steps; x0, only_want_gnep=true)
-        #    costs = compute_realized_cost(sp_res)
-        #    sp_results[index] = sp_res
-        #    sp_costs[index] = costs
-        #catch err
-        #    @info "sp failed $index: $x0"
-        #    println(err)
-        #end
+        try
+            sp_res = solve_simulation(probs, time_steps; x0, only_want_sp=true)
+            costs = compute_realized_cost(sp_res)
+            sp_results[index] = sp_res
+            sp_costs[index] = costs
+        catch err
+            @info "sp failed $index: $x0"
+            println(err)
+        end
 
         try
             gnep_res = solve_simulation(probs, time_steps; x0, only_want_gnep=true)
@@ -112,34 +112,34 @@ else
             println(err)
         end
 
-        next!(progress)
+        #next!(prog)
     end
-    elapsed = time() - start
-    done!(progress)
+    #elapsed = time() - start
+    finish!(prog)
 
     # save
     if is_x0s_from_file
-        jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
+        jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, sp_results,sp_costs, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
     else
-        jldsave("$(data_dir)/results_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; params=probs.params, x0s, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
+        jldsave("$(data_dir)/results_$(Dates.format(now(),"YYYY-mm-dd_HHMM")).jld2"; params=probs.params, x0s, sp_results, sp_costs, gnep_results, gnep_costs, bilevel_results, bilevel_costs, elapsed)
     end
 
-    all_costs = extract_costs(gnep_costs, gnep_costs, bilevel_costs)
+    all_costs = extract_costs(sp_costs, gnep_costs, bilevel_costs)
 end
 
-@info "bilevel vs gnep total cost"
+@info "total Δcost"
 Δcost_total = compute_player_Δcost(all_costs.gnep.total, all_costs.bilevel.total)
 print_mean_min_max(Δcost_total.P1_abs, Δcost_total.P2_abs, Δcost_total.P1_rel, Δcost_total.P2_rel)
 
-@info "bilevel vs gnep lane cost"
+@info "lane Δcost"
 Δcost_lane = compute_player_Δcost(all_costs.gnep.lane, all_costs.bilevel.lane)
 print_mean_min_max(Δcost_lane.P1_abs, Δcost_lane.P2_abs, Δcost_lane.P1_rel, Δcost_lane.P2_rel)
 
-@info "bilevel vs gnep control cost"
+@info "control Δcost:"
 Δcost_control = compute_player_Δcost(all_costs.gnep.control, all_costs.bilevel.control)
 print_mean_min_max(Δcost_control.P1_abs, Δcost_control.P2_abs, Δcost_control.P1_rel, Δcost_control.P2_rel)
 
-@info "bilevel vs gnep terminal cost"
+@info "terminal Δcost:"
 Δcost_terminal = compute_player_Δcost(all_costs.gnep.terminal, all_costs.bilevel.terminal)
 print_mean_min_max(Δcost_terminal.P1_abs, Δcost_terminal.P2_abs, Δcost_terminal.P1_rel, Δcost_terminal.P2_rel)
 

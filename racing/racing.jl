@@ -333,6 +333,8 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         want_sp = true
         want_gnep = false
         want_bilevel = false
+        try_bilevel_first = false
+        try_gnep_first = false
     end
 
     # preference order

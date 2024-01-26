@@ -44,7 +44,7 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
     end
 
     x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
-    @infiltrate
+    #@infiltrate
     for (index, row) in enumerate(eachrow(x0_arr))
         x0s[index] = row
     end
