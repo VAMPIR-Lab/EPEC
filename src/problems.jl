@@ -208,6 +208,7 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
     while !converged
         iters += 1
 
+       
         (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true
@@ -303,7 +304,8 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
         jacobian_structure_constant=true,
         jacobian_data_contiguous=true,
         cumulative_iteration_limit=50_000,
-        convergence_tolerance=1e-7
+        convergence_tolerance=1e-7,
+        lemke_rank_deficiency_iterations=100 # fixes silent crashes " ** SOLVER ERROR ** Lemke: invertible basis could not be computed."
     )
 
     if status != PATHSolver.MCP_Solved
@@ -457,7 +459,7 @@ function get_local_solution_graph(mcp, θ; tol=1e-6)
     end
     valid_solution = !any(isempty.(Ji for Ji in values(J)))
     !valid_solution && begin
-        @infiltrate
+        #@infiltrate
         error("Not a valid solution!")
     end
     recipes = get_all_recipes(J)

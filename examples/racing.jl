@@ -275,7 +275,7 @@ function attempt_solve(prob, init)
     (success, result)
 end
 
-function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=false, try_gnep_first=true)
+function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false, try_bilevel_first=false, try_gnep_first=true)
     T = probs.params.T
     Δt = probs.params.Δt
     cd = probs.params.cd
@@ -328,6 +328,12 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
 	else
    		want_sp = false
 	end
+
+    if only_want_sp
+        want_sp = true 
+        want_gnep = false
+        want_bilevel = false
+    end
 
     # preference order
     # 1. bilevel
@@ -496,8 +502,9 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
     if lowest_preference < 8
         @info "Success $lowest_preference"
     else
-        @infiltrate
-        #error("You failed singleplayer!")
+        #@infiltrate
+        @info "Wow, sp failed.."
+        #throw(error("Singleplayer failure!"))
     end
 
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
@@ -511,23 +518,26 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, try_bilevel_first=f
     (; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z)
 end
 
-function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want_gnep=false)
+function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want_gnep=false, only_want_sp=false)
     results = Dict()
     for t = 1:T
         @info "Sim timestep $t:"
         #r = solve_seq(probs, x0)
-        r = solve_seq_adaptive(probs, x0; only_want_gnep=only_want_gnep)
+        r = solve_seq_adaptive(probs, x0; only_want_gnep=only_want_gnep, only_want_sp=only_want_sp)
 
 		lowest_preference, Z = r.sorted_Z[1]
 		z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0];
 		costs = [OP.f(z) for OP in probs.gnep.OPs]
 		feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]	
-
 		feasible = all(all(feasible_arr[i][1]) for i in 1:2)
 		feasible = all(all.(feasible_arr[:][1]))
-		@infiltrate !feasible
-		@infiltrate any(r.P1[:,4] .< 0)
-		@infiltrate any(r.P2[:,4] .< 0)
+        if !feasible || any(r.P1[:,4] .< 0) || any(r.P2[:,4] .< 0)
+            throw(error("Infeasible solution :/"))
+            @infiltrate
+            #@infiltrate any(r.P1[:,4] .< 0)
+            #@infiltrate any(r.P2[:,4] .< 0)
+        end
+	
 
 		#@infiltrate t == 74
 		#show_me(z, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
