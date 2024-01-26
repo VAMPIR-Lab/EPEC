@@ -525,19 +525,18 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         #r = solve_seq(probs, x0)
         r = solve_seq_adaptive(probs, x0; only_want_gnep=only_want_gnep, only_want_sp=only_want_sp)
 
+        #costs = [OP.f(z) for OP in probs.gnep.OPs]
         lowest_preference, Z = r.sorted_Z[1]
         z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]
-        costs = [OP.f(z) for OP in probs.gnep.OPs]
         feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]
         feasible = all(all(feasible_arr[i][1]) for i in 1:2)
         feasible = all(all.(feasible_arr[:][1]))
-        if !feasible || any(r.P1[:, 4] .< 0) || any(r.P2[:, 4] .< 0)
-            throw(error("Infeasible solution :/"))
-            @infiltrate
+        if !feasible || any(r.P1[:, 4] .< 0) || any(r.P2[:, 4] .< 0) || any(r.P1[:, 1] .< -lat_max) || any(r.P2[:, 1] .< -lat_max) || any(r.P1[:, 1] .> lat_max) || any(r.P2[:, 1] .> lat_max)
+            throw(error("Infeasible solution :("))
+            #@infiltrate
             #@infiltrate any(r.P1[:,4] .< 0)
             #@infiltrate any(r.P2[:,4] .< 0)
         end
-
 
         #@infiltrate t == 74
         #show_me(z, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)

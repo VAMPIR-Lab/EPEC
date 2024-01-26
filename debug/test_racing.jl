@@ -35,6 +35,8 @@ x0 = [1., 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial veloci
 #update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
 sim_results = solve_simulation(probs, 200; x0, only_want_gnep=true);
+
+
 animate(probs, sim_results; save=false);
 
 prefs = zeros(Int, length(sim_results))

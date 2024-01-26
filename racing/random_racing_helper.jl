@@ -2,7 +2,7 @@ using Random
 using Statistics
 
 # generate x0s
-function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, long_vel_max)
+function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
     # choose random P1 lateral position inside the lane limits, long pos = 0
     a_lat_pos0_arr = -lat_max .+ 2 * lat_max .* rand(MersenneTwister(), sample_size) # .5 .* ones(sample_size)
     # fix P1 longitudinal pos at 0
@@ -29,11 +29,22 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, long_vel
     #Plots.scatter!(b_pos0_arr[:, 1], b_pos0_arr[:, 2], aspect_ratio=:equal, legend=false)
 
     # keep lateral velocity zero
-    a_vel0_arr = hcat(zeros(sample_size), long_vel_max .* rand(MersenneTwister(), sample_size))
-    b_vel0_arr = hcat(zeros(sample_size), long_vel_max .* rand(MersenneTwister(), sample_size))
+    a_vel0_arr = hcat(zeros(sample_size), a_long_vel_max .* rand(MersenneTwister(), sample_size))
+    b_vel0_arr = zeros(size(a_vel0_arr))
+    # choose random velocity offset for 
+    for i in 1:sample_size
+        b_long_vel0_offset = -b_long_vel_delta_max + 2 * b_long_vel_delta_max .* rand(MersenneTwister())
+        b_long_vel0 = a_vel0_arr[i, 2] + b_long_vel0_offset
+        # reroll until b long vel is nonnegative
+        while b_long_vel0 < 0
+            b_long_vel0_offset = -b_long_vel_delta_max + 2 * b_long_vel_delta_max .* rand(MersenneTwister())
+            b_long_vel0 = a_vel0_arr[i, 2] + b_long_vel0_offset
+        end
+        b_vel0_arr[i, 2] = b_long_vel0
+    end
 
     x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
-
+    @infiltrate
     for (index, row) in enumerate(eachrow(x0_arr))
         x0s[index] = row
     end
@@ -111,8 +122,18 @@ function compute_realized_cost(res)
     (; a_cost, b_cost, a_cost_breakdown, b_cost_breakdown)
 end
 
+function find_common_ind(dicts...)
+    common_keys = intersect(keys(dict1), keys(dict2), keys(dict3))
+
+end
+
 # statistics
-function extract_costs(gnep_costs, bilevel_costs)
+function extract_costs(sp_costs, gnep_costs, bilevel_costs)
+    index_arr = []
+    sp_cost_arr = []
+    sp_lane_cost_arr = []
+    sp_control_cost_arr = []
+    sp_terminal_cost_arr = []
     gnep_cost_arr = []
     gnep_lane_cost_arr = []
     gnep_control_cost_arr = []
@@ -121,38 +142,55 @@ function extract_costs(gnep_costs, bilevel_costs)
     bilevel_lane_cost_arr = []
     bilevel_control_cost_arr = []
     bilevel_terminal_cost_arr = []
-    index_arr = [];
-    
-    for (index, gnep_cost) in gnep_costs
-        if haskey(bilevel_costs, index)
-            push!(gnep_cost_arr, [gnep_cost.a_cost, gnep_cost.b_cost])
-            push!(gnep_lane_cost_arr, [gnep_cost.a_cost_breakdown.lane_cost, gnep_cost.b_cost_breakdown.lane_cost])
-            push!(gnep_control_cost_arr, [gnep_cost.a_cost_breakdown.control_cost, gnep_cost.b_cost_breakdown.control_cost])
-            push!(gnep_terminal_cost_arr, [gnep_cost.a_cost_breakdown.terminal_cost, gnep_cost.b_cost_breakdown.terminal_cost])
-            push!(bilevel_cost_arr, [bilevel_costs[index].a_cost, bilevel_costs[index].b_cost])
-            push!(bilevel_lane_cost_arr, [bilevel_costs[index].a_cost_breakdown.lane_cost, bilevel_costs[index].b_cost_breakdown.lane_cost])
-            push!(bilevel_control_cost_arr, [bilevel_costs[index].a_cost_breakdown.control_cost, bilevel_costs[index].b_cost_breakdown.control_cost])
-            push!(bilevel_terminal_cost_arr, [bilevel_costs[index].a_cost_breakdown.terminal_cost, bilevel_costs[index].b_cost_breakdown.terminal_cost])
+
+    for (index, sp_cost) in sp_costs
+        if haskey(gnep_costs, index) && haskey(bilevel_costs, index)
+            if haskey(bilevel_costs, index)
+                push!(index_arr, index)
+                push!(sp_cost_arr, [sp_cost.a_cost, sp_cost.b_cost])
+                push!(sp_lane_cost_arr, [sp_cost.a_cost_breakdown.lane_cost, sp_cost.b_cost_breakdown.lane_cost])
+                push!(sp_control_cost_arr, [sp_cost.a_cost_breakdown.control_cost, sp_cost.b_cost_breakdown.control_cost])
+                push!(sp_terminal_cost_arr, [sp_cost.a_cost_breakdown.terminal_cost, sp_cost.b_cost_breakdown.terminal_cost])
+                push!(gnep_cost_arr, [gnep_costs[index].a_cost, gnep_costs[index].b_cost])
+                push!(gnep_lane_cost_arr, [gnep_costs[index].a_cost_breakdown.lane_cost, gnep_costs[index].b_cost_breakdown.lane_cost])
+                push!(gnep_control_cost_arr, [gnep_costs[index].a_cost_breakdown.control_cost, gnep_costs[index].b_cost_breakdown.control_cost])
+                push!(gnep_terminal_cost_arr, [gnep_costs[index].a_cost_breakdown.terminal_cost, gnep_costs[index].b_cost_breakdown.terminal_cost])
+                push!(bilevel_cost_arr, [bilevel_costs[index].a_cost, bilevel_costs[index].b_cost])
+                push!(bilevel_lane_cost_arr, [bilevel_costs[index].a_cost_breakdown.lane_cost, bilevel_costs[index].b_cost_breakdown.lane_cost])
+                push!(bilevel_control_cost_arr, [bilevel_costs[index].a_cost_breakdown.control_cost, bilevel_costs[index].b_cost_breakdown.control_cost])
+                push!(bilevel_terminal_cost_arr, [bilevel_costs[index].a_cost_breakdown.terminal_cost, bilevel_costs[index].b_cost_breakdown.terminal_cost])
+            end
         end
     end
-    gnep = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, terminal=gnep_terminal_cost_arr)
-    bilevel = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, terminal=bilevel_terminal_cost_arr)
-
-    return (; gnep, bilevel)
+    sp_extracted = (total=sp_cost_arr, lane=sp_lane_cost_arr, control=sp_control_cost_arr, terminal=sp_terminal_cost_arr)
+    gnep_extracted = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, terminal=gnep_terminal_cost_arr)
+    bilevel_extracted = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, terminal=bilevel_terminal_cost_arr)
+    cost = (ind=index_arr, sp=sp_extracted, gnep=gnep_extracted, bilevel=bilevel_extracted)
+    cost
 end
 
-function print_mean_min_max(baseline_cost, other_cost)
+function compute_player_Δcost(baseline_cost, other_cost)
     P1_baseline_cost = [v[1] for v in baseline_cost]
     P1_other_cost = [v[1] for v in other_cost]
     P2_baseline_cost = [v[2] for v in baseline_cost]
     P2_other_cost = [v[2] for v in other_cost]
 
     # bilevel vs gnep
-    P1_cost_diff = P1_other_cost .- P1_baseline_cost
-    P2_cost_diff = P2_other_cost .- P2_baseline_cost
-    P1_rel_cost_diff = P1_cost_diff ./ abs.(P1_baseline_cost)
-    P2_rel_cost_diff = P2_cost_diff ./ abs.(P2_baseline_cost)
-    println("		mean 		        std 		    min		        max")
+    P1_abs_Δcost = P1_other_cost .- P1_baseline_cost
+    P2_abs_Δcost = P2_other_cost .- P2_baseline_cost
+    P1_rel_Δcost = P1_abs_Δcost ./ abs.(P1_baseline_cost)
+    P2_rel_Δcost = P2_abs_Δcost ./ abs.(P2_baseline_cost)
+
+    P1_max_ind = argmax(P1_abs_Δcost)
+    P1_min_ind = argmin(P1_abs_Δcost)
+    P2_max_ind = argmax(P2_abs_Δcost)
+    P2_min_ind = argmin(P2_abs_Δcost)
+    Δcost = (; P1_abs=P1_abs_Δcost, P2_abs=P2_abs_Δcost, P1_rel=P1_rel_Δcost, P2_rel=P2_rel_Δcost, P1_max_ind, P1_min_ind, P2_max_ind, P2_min_ind)
+    Δcost
+end
+
+function print_mean_min_max(P1_cost_diff, P2_cost_diff, P1_rel_cost_diff, P2_rel_cost_diff)
+    println("		mean 		        stderr 		    min		        max")
     println("P1 Δcost abs :  $(mean(P1_cost_diff))  $(std(P1_cost_diff)/sqrt(length(P1_cost_diff)))  $(minimum(P1_cost_diff))  $(maximum(P1_cost_diff))")
     println("P2 Δcost abs :  $(mean(P2_cost_diff))  $(std(P2_cost_diff)/sqrt(length(P1_cost_diff)))  $(minimum(P2_cost_diff))  $(maximum(P2_cost_diff))")
     println("P1 Δcost rel%:  $(mean(P1_rel_cost_diff)*100)  $(std(P1_rel_cost_diff)/sqrt(length(P1_cost_diff))*100)  $(minimum(P1_rel_cost_diff)*100)  $(maximum(P1_rel_cost_diff)*100)")
