@@ -157,7 +157,7 @@ function g1(Z,
     long_accel = @view(Ua[2:2:end])
     lat_accel = @view(Ua[1:2:end])
     lat_pos = @view(Xa[1:4:end])
-	long_vel = @view(Xa[4:4:end])
+    long_vel = @view(Xa[4:4:end])
 
     [g_dyn
         g_col - l.(h_col)
@@ -166,7 +166,7 @@ function g1(Z,
         long_accel - u_max_2
         long_accel - u_max_3
         long_accel - u_max_4
-		long_vel 
+        long_vel
         lat_pos]
 end
 
@@ -198,7 +198,7 @@ function g2(Z,
     long_accel = @view(Ub[2:2:end])
     lat_accel = @view(Ub[1:2:end])
     lat_pos = @view(Xb[1:4:end])
-	long_vel = @view(Xb[4:4:end])
+    long_vel = @view(Xb[4:4:end])
 
     [g_dyn
         g_col - l.(h_col)
@@ -207,7 +207,7 @@ function g2(Z,
         long_accel - u_max_2
         long_accel - u_max_3
         long_accel - u_max_4
-		long_vel
+        long_vel
         lat_pos]
 end
 
@@ -224,7 +224,7 @@ function setup(; T=10,
     box_width=1.0,
     lat_max=5.0)
 
-    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(0., T); fill(-lat_max, T)]
+    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(0.0, T); fill(-lat_max, T)]
     ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(+lat_max, T)]
 
     f1_pinned = (z -> f1(z; α1, α2, β))
@@ -260,7 +260,7 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; sp_a, sp_b, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting))
+    problems = (; sp_a, sp_b, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, α1, α2, β, box_length, box_width))
 end
 
 function attempt_solve(prob, init)
@@ -288,8 +288,8 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
     xa = x0a
     xb = x0b
     for t in 1:T
-        ua = [0;0]#-cd * xa[3:4]
-        ub = [0;0]#-cd * xb[3:4]
+        ua = [0; 0]#-cd * xa[3:4]
+        ub = [0; 0]#-cd * xb[3:4]
         xa = pointmass(xa, ua, Δt, cd)
         xb = pointmass(xb, ub, Δt, cd)
         append!(Ua, ua)
@@ -323,14 +323,14 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         want_bilevel = true
     end
 
-	if !try_bilevel_first && !try_gnep_first
-		want_sp = true 
-	else
-   		want_sp = false
-	end
+    if !try_bilevel_first && !try_gnep_first
+        want_sp = true
+    else
+        want_sp = false
+    end
 
     if only_want_sp
-        want_sp = true 
+        want_sp = true
         want_gnep = false
         want_bilevel = false
     end
@@ -525,22 +525,22 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         #r = solve_seq(probs, x0)
         r = solve_seq_adaptive(probs, x0; only_want_gnep=only_want_gnep, only_want_sp=only_want_sp)
 
-		lowest_preference, Z = r.sorted_Z[1]
-		z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0];
-		costs = [OP.f(z) for OP in probs.gnep.OPs]
-		feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]	
-		feasible = all(all(feasible_arr[i][1]) for i in 1:2)
-		feasible = all(all.(feasible_arr[:][1]))
-        if !feasible || any(r.P1[:,4] .< 0) || any(r.P2[:,4] .< 0)
+        lowest_preference, Z = r.sorted_Z[1]
+        z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]
+        costs = [OP.f(z) for OP in probs.gnep.OPs]
+        feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]
+        feasible = all(all(feasible_arr[i][1]) for i in 1:2)
+        feasible = all(all.(feasible_arr[:][1]))
+        if !feasible || any(r.P1[:, 4] .< 0) || any(r.P2[:, 4] .< 0)
             throw(error("Infeasible solution :/"))
             @infiltrate
             #@infiltrate any(r.P1[:,4] .< 0)
             #@infiltrate any(r.P2[:,4] .< 0)
         end
-	
 
-		#@infiltrate t == 74
-		#show_me(z, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+
+        #@infiltrate t == 74
+        #show_me(z, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
         x0a = r.P1[1, :]
         x0b = r.P2[1, :]
@@ -725,7 +725,7 @@ function solve_seq(probs, x0)
     bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
 
     θ_bilevel = bilevel_init # fall back
-	
+
     try
         θ_bilevel = solve(probs.bilevel, bilevel_init)
         #show_me(θ_bilevel, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
