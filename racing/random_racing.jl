@@ -113,61 +113,56 @@ else
     jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, sp_results, gnep_results, bilevel_results, elapsed)
 end
 
-# valid only if we have at least time_steps number of time steps 
-sp_costs = Dict()
-gnep_costs = Dict()
-bilevel_costs = Dict()
-
 sp_steps = Dict()
 gnep_steps = Dict()
 bilevel_steps = Dict()
 
+sp_costs = Dict()
+gnep_costs = Dict()
+bilevel_costs = Dict()
+
 for (index, res) in sp_results
     len = length(res)
     sp_steps[index] = len
-
-    if len >= time_steps
-        sp_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
-    end
+    sp_costs[index] = compute_realized_cost(res)
 end
 
 for (index, res) in gnep_results
     len = length(res)
     gnep_steps[index] = len
-
-    if len >= time_steps
-        gnep_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
-    end
+    gnep_costs[index] = compute_realized_cost(res)
 end
 
 for (index, res) in bilevel_results
     len = length(res)
     bilevel_steps[index] = len
-
-    if len >= time_steps
-        bilevel_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
-    end
+    bilevel_costs[index] = compute_realized_cost(res)
 end
 
 #@info "Average sp time steps: $(mean(values(sp_steps)))"
 #@info "Average gnep time steps: $(mean(values(gnep_steps)))"
 #@info "Average bilevel time steps: $(mean(values(bilevel_steps)))"
-bins = 1:time_steps+1
-histogram1 = histogram(collect(values(sp_steps)), bins=bins, label="sp")
-histogram2 = histogram(collect(values(gnep_steps)), bins=bins, label="gnep")
-histogram3 = histogram(collect(values(bilevel_steps)), bins=bins, xlabel="# steps", label="bilevel")
-Plots.plot(histogram1, histogram2, histogram3, layout=(3, 1), legend=true, ylabel="# x0")
+#bins = 1:time_steps+1
+#histogram1 = histogram(collect(values(sp_steps)), bins=bins, label="sp")
+#histogram2 = histogram(collect(values(gnep_steps)), bins=bins, label="gnep")
+#histogram3 = histogram(collect(values(bilevel_steps)), bins=bins, xlabel="# steps", label="bilevel")
+#Plots.plot(histogram1, histogram2, histogram3, layout=(3, 1), legend=true, ylabel="# x0")
 
-#(; a_cost, b_cost, a_cost_breakdown, b_cost_breakdown) = compute_realized_cost(sp_results[1])
+
+#p = Plots.plot()
+#for (i, c) in bilevel_costs
+#    Plots.plot!(p, c.a.running.total, label="")
+#end
+#p
+
 #Plots.plot(a_cost_breakdown.running.lane)
 #Plots.plot!(b_cost_breakdown.running.lane)
 
-#Plots.plot(a_cost_breakdown.running.lane)
-#Plots.plot!(b_cost_breakdown.running.lane)
-
-# sp fails so much, so ignoring for now..
-all_costs = extract_costs(gnep_costs, gnep_costs, bilevel_costs)
-inds = all_costs.ind
+# trim with specified time steps
+sp_costs_tr = trim_by_steps(sp_costs, sp_steps; min_steps=time_steps)
+gnep_costs_tr = trim_by_steps(gnep_costs, gnep_steps; min_steps=time_steps)
+bilevel_costs_tr = trim_by_steps(bilevel_costs, bilevel_steps; min_steps=time_steps)
+all_costs = extract_intersected_costs(gnep_costs_tr, gnep_costs_tr, bilevel_costs_tr)
 
 @info "total Δcost = bilevel - gnep"
 Δcost_total = compute_player_Δcost(all_costs.gnep.total, all_costs.bilevel.total)
@@ -198,7 +193,7 @@ worst_ind_P1 = all_costs.ind[Δcost_total.P1_min_ind]
 worst_ind_P2 = all_costs.ind[Δcost_total.P2_min_ind]
 #@assert(worst_ind_P1 == worst_ind_P2)
 
-animate(probs, gnep_results[best_ind_P1]; save=false, filename="gnep_best_case.mp4");
+#animate(probs, gnep_results[best_ind_P1]; save=false, filename="gnep_best_case.mp4");
 #animate(probs, bilevel_results[best_ind_P1]; save=false, filename="bilevel_best_case.mp4");
 #animate(probs, gnep_results[worst_ind_P1]; save=false, filename="gnep_worst_case.mp4");
 #animate(probs, bilevel_results[worst_ind_P1]; save=false, filename="bilevel_worst_case.mp4");
