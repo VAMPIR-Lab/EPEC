@@ -29,13 +29,13 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-is_x0s_from_file = false;
-is_results_from_file = false;
+is_x0s_from_file = true;
+is_results_from_file = true;
 data_dir = "data"
-init_filename = "x0s_100samples_2024-01-26_1822";
-results_filename = "results_x0s_100samples_2024-01-26_1822_2024-01-26_2132_100steps";
-sample_size = 10000;
-time_steps = 200;
+init_filename = "x0s_100samples_2024-01-27_1012";
+results_filename = "results_x0s_100samples_2024-01-27_1012_2024-01-27_1026_100steps";
+sample_size = 100;
+time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
@@ -68,7 +68,7 @@ if is_results_from_file
     sp_results = results_file["sp_results"]
     gnep_results = results_file["gnep_results"]
     bilevel_results = results_file["bilevel_results"]
-    elapsed  = results_file["elapsed"] 
+    elapsed = results_file["elapsed"]
 else
     sp_results = Dict()
     gnep_results = Dict()
@@ -118,23 +118,52 @@ sp_costs = Dict()
 gnep_costs = Dict()
 bilevel_costs = Dict()
 
+sp_steps = Dict()
+gnep_steps = Dict()
+bilevel_steps = Dict()
+
 for (index, res) in sp_results
-    if length(res) >= time_steps
+    len = length(res)
+    sp_steps[index] = len
+
+    if len >= time_steps
         sp_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
     end
 end
 
 for (index, res) in gnep_results
-    if length(res) >= time_steps
+    len = length(res)
+    gnep_steps[index] = len
+
+    if len >= time_steps
         gnep_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
     end
 end
 
 for (index, res) in bilevel_results
-    if length(res) >= time_steps
+    len = length(res)
+    bilevel_steps[index] = len
+
+    if len >= time_steps
         bilevel_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
     end
 end
+
+#@info "Average sp time steps: $(mean(values(sp_steps)))"
+#@info "Average gnep time steps: $(mean(values(gnep_steps)))"
+#@info "Average bilevel time steps: $(mean(values(bilevel_steps)))"
+bins = 1:time_steps+1
+histogram1 = histogram(collect(values(sp_steps)), bins=bins, label="sp")
+histogram2 = histogram(collect(values(gnep_steps)), bins=bins, label="gnep")
+histogram3 = histogram(collect(values(bilevel_steps)), bins=bins, xlabel="# steps", label="bilevel")
+Plots.plot(histogram1, histogram2, histogram3, layout=(3, 1), legend=true, ylabel="# x0")
+
+#(; a_cost, b_cost, a_cost_breakdown, b_cost_breakdown) = compute_realized_cost(sp_results[1])
+#Plots.plot(a_cost_breakdown.running.lane)
+#Plots.plot!(b_cost_breakdown.running.lane)
+
+#Plots.plot(a_cost_breakdown.running.lane)
+#Plots.plot!(b_cost_breakdown.running.lane)
 
 # sp fails so much, so ignoring for now..
 all_costs = extract_costs(gnep_costs, gnep_costs, bilevel_costs)
@@ -160,7 +189,6 @@ print_mean_min_max(Δcost_velocity.P1_abs, Δcost_velocity.P2_abs, Δcost_veloci
 Δcost_terminal = compute_player_Δcost(all_costs.gnep.terminal, all_costs.bilevel.terminal)
 print_mean_min_max(Δcost_terminal.P1_abs, Δcost_terminal.P2_abs, Δcost_terminal.P1_rel, Δcost_terminal.P2_rel)
 
-
 # best
 best_ind_P1 = all_costs.ind[Δcost_total.P1_max_ind]
 best_ind_P2 = all_costs.ind[Δcost_total.P2_max_ind]
@@ -170,7 +198,7 @@ worst_ind_P1 = all_costs.ind[Δcost_total.P1_min_ind]
 worst_ind_P2 = all_costs.ind[Δcost_total.P2_min_ind]
 #@assert(worst_ind_P1 == worst_ind_P2)
 
-#animate(probs, gnep_results[best_ind_P1]; save=false, filename="gnep_best_case.mp4");
+animate(probs, gnep_results[best_ind_P1]; save=false, filename="gnep_best_case.mp4");
 #animate(probs, bilevel_results[best_ind_P1]; save=false, filename="bilevel_best_case.mp4");
 #animate(probs, gnep_results[worst_ind_P1]; save=false, filename="gnep_worst_case.mp4");
 #animate(probs, bilevel_results[worst_ind_P1]; save=false, filename="bilevel_worst_case.mp4");

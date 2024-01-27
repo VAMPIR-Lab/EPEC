@@ -530,16 +530,21 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
     for t = 1:T
         @info "Sim timestep $t:"
         # check initial condition feasibility
+        is_x0_infeasible = false 
+
         if col(x0a, x0b, probs.params.r)[1] <= 0 - 1e-4
             status = "Infeasible initial condition: Collision"
-            @info(status)
-            break
+            is_x0_infeasible = true
         elseif x0a[1] < -lat_max - 1e-4 || x0a[1] > lat_max + 1e-4 || x0b[1] < -lat_max - 1e-4 || x0b[1] > lat_max + 1e-4
-            status =  "Infeasible initial condition: Out of lanes"
-            @info(status)
-            break
+            status = "Infeasible initial condition: Out of lanes"
+            is_x0_infeasible = true
         elseif x0a[4] < probs.params.min_long_vel - 1e-4 || x0b[4] < probs.params.min_long_vel - 1e-4
             status = "Infeasible initial condition: Invalid velocity"
+            is_x0_infeasible = true
+        end
+
+        if is_x0_infeasible
+            # currently status isn't saved
             @info(status)
             break
         end
@@ -558,6 +563,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
                 # this must never trigger
                 @infiltrate
             end
+            status = "Invalid solution"
             @info "Invalid solution"
         end
         # clamp controls and check feasibility
@@ -588,13 +594,13 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         x0a = pointmass(xa, ua, probs.params.Δt, probs.params.cd)
         x0b = pointmass(xb, ub, probs.params.Δt, probs.params.cd)
 
-        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z, status)
+        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z)
         x0 = [x0a; x0b]
     end
     results
 end
 
-function animate(probs, sim_results; save=false, filename="test.mp4")
+function animate(probs, sim_results; save=false, filename="test.mp4", sleep_duration=1e-2)
     rad = sqrt(probs.params.r) / 2
     lat = probs.params.lat_max + rad
     (f, ax, XA, XB, lat) = visualize(; rad=rad, lat=lat)
@@ -610,7 +616,7 @@ function animate(probs, sim_results; save=false, filename="test.mp4")
         for t in 1:T
             update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
             ax.title = string(t)
-            sleep(1e-1)
+            sleep(sleep_duration)
         end
     end
 end
