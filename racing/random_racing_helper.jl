@@ -52,7 +52,7 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
 end
 
 # detailed cost
-function f1_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
+function f1_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
@@ -77,7 +77,7 @@ function f1_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
     (; cost, lane_cost, control_cost, velocity_cost, terminal_cost)
 end
 
-function f2_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
+function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
@@ -90,11 +90,12 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, β=1.0)
     terminal_cost = 0.0
 
     for t in 1:T
+        @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
         @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
         @inbounds ub = @view(Ub[udim*(t-1)+1:udim*t])
         lane_cost += α1 * xb[1]^2
         control_cost += α2 * ub' * ub
-        velocity_cost += -α3 * xa[4]
+        velocity_cost += -α3 * xb[4]
         terminal_cost += β * xa[2]
     end
     cost = lane_cost + control_cost + velocity_cost + terminal_cost
@@ -113,8 +114,8 @@ function compute_realized_cost(res)
     Z = [z_arr[:]; zeros(8)] # making it work with f1(Z) and f2(Z)
     a_cost = probs.OP1.f(Z)
     b_cost = probs.OP2.f(Z)
-    a_cost_breakdown = f1_breakdown(Z; probs.params.α1, probs.params.α2, probs.params.β)
-    b_cost_breakdown = f2_breakdown(Z; probs.params.α1, probs.params.α2, probs.params.β)
+    a_cost_breakdown = f1_breakdown(Z; probs.params.α1, probs.params.α2, probs.params.α3, probs.params.β)
+    b_cost_breakdown = f2_breakdown(Z; probs.params.α1, probs.params.α2, probs.params.α3, probs.params.β)
     # breakdowns were copy pasted so
     @assert(isapprox(a_cost, a_cost_breakdown.cost))
     @assert(isapprox(b_cost, b_cost_breakdown.cost))
@@ -157,12 +158,12 @@ function extract_costs(sp_costs, gnep_costs, bilevel_costs)
                 push!(gnep_cost_arr, [gnep_costs[index].a_cost, gnep_costs[index].b_cost])
                 push!(gnep_lane_cost_arr, [gnep_costs[index].a_cost_breakdown.lane_cost, gnep_costs[index].b_cost_breakdown.lane_cost])
                 push!(gnep_control_cost_arr, [gnep_costs[index].a_cost_breakdown.control_cost, gnep_costs[index].b_cost_breakdown.control_cost])
-                push!(gnep_velocity_cost_arr, [gnep_cost.a_cost_breakdown.velocity_cost, gnep_cost.b_cost_breakdown.velocity_cost])
+                push!(gnep_velocity_cost_arr, [gnep_costs[index].a_cost_breakdown.velocity_cost, gnep_costs[index].b_cost_breakdown.velocity_cost])
                 push!(gnep_terminal_cost_arr, [gnep_costs[index].a_cost_breakdown.terminal_cost, gnep_costs[index].b_cost_breakdown.terminal_cost])
                 push!(bilevel_cost_arr, [bilevel_costs[index].a_cost, bilevel_costs[index].b_cost])
                 push!(bilevel_lane_cost_arr, [bilevel_costs[index].a_cost_breakdown.lane_cost, bilevel_costs[index].b_cost_breakdown.lane_cost])
                 push!(bilevel_control_cost_arr, [bilevel_costs[index].a_cost_breakdown.control_cost, bilevel_costs[index].b_cost_breakdown.control_cost])
-                push!(bilevel_velocity_cost_arr, [bilevel_cost.a_cost_breakdown.velocity_cost, bilevel_cost.b_cost_breakdown.velocity_cost])
+                push!(bilevel_velocity_cost_arr, [bilevel_costs[index].a_cost_breakdown.velocity_cost, bilevel_costs[index].b_cost_breakdown.velocity_cost])
                 push!(bilevel_terminal_cost_arr, [bilevel_costs[index].a_cost_breakdown.terminal_cost, bilevel_costs[index].b_cost_breakdown.terminal_cost])
             end
         end

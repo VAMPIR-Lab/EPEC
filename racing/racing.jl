@@ -578,7 +578,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
            x0a[1] > lat_max + 1e-4 ||
            x0b[1] < -lat_max - 1e-4 ||
            x0b[1] > lat_max + 1e-4
-            @infiltrate
+            #@infiltrate
             throw(error("Infeasible simulation :("))
         end
 

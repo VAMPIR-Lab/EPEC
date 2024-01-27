@@ -18,7 +18,7 @@ include("random_racing_helper.jl")
 probs = setup(; T=10, 
 	Δt = 0.1, 
 	r = 1.0, 
-	α1 = 1e-2,
+	α1 = 1e-3,
 	α2 = 1e-4,
 	α3 = 1e-2,	
 	β = 1e-2, #.5, # sensitive to high values
@@ -29,13 +29,13 @@ probs = setup(; T=10,
 	box_width = 2.0,
 	lat_max = 1.5);
 
-is_x0s_from_file = false;
+is_x0s_from_file = true;
 is_results_from_file = false;
 data_dir = "data"
-init_filename = "x0s_100samples_2024-01-26_1321";
+init_filename = "x0s_100samples_2024-01-26_1822";
 results_filename = "results_x0s_100samples_2024-01-26_1321_2024-01-26_1343_150steps";
-sample_size = 2;
-time_steps = 10;
+sample_size = 100;
+time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
