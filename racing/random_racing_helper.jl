@@ -154,6 +154,26 @@ function trim_by_steps(costs, steps; min_steps=10)
     return trimmed_costs
 end
 
+# this messes up the order
+function extract_costs(costs, keys)
+    total_cost_arr = zeros(length(keys))
+    lane_cost_arr = zeros(length(keys))
+    control_cost_arr = zeros(length(keys))
+    velocity_cost_arr = zeros(length(keys))
+    terminal_cost_arr = zeros(length(keys))
+
+    for i in keys
+        push!(total_cost_arr, [costs[i].a.final.total, costs[i].b.final.total])
+        push!(lane_cost_arr, [costs[i].a.final.lane, costs[i].b.final.lane])
+        push!(control_cost_arr, [costs[i].a.final.control, costs[i].b.final.control])
+        push!(velocity_cost_arr, [costs[i].a.final.velocity, costs[i].b.final.velocity])
+        push!(terminal_cost_arr, [costs[i].a.final.terminal, costs[i].b.final.terminal])
+    end
+
+    cost = (total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, terminal=terminal_cost_arr)
+    cost
+end
+
 function extract_intersected_costs(sp_costs, gnep_costs, bilevel_costs)
     index_arr = []
     sp_cost_arr = []
@@ -230,7 +250,7 @@ function print_mean_min_max(P1_cost_diff, P2_cost_diff, P1_rel_cost_diff, P2_rel
 end
 
 
-function plot_running_costs(costs; T=10)
+function plot_running_costs(costs; T=10, is_cumulative=false)
     pa_lane = Plots.plot()
     pb_lane = Plots.plot()
     pa_control = Plots.plot()
@@ -239,18 +259,36 @@ function plot_running_costs(costs; T=10)
     pb_velocity = Plots.plot()
     pa_terminal = Plots.plot()
     pb_terminal = Plots.plot()
+    pa_total = Plots.plot()
+    pb_total = Plots.plot()
+
 
     for (index, c) in costs
         idx = 1:min(T, length(c.a.running.lane))
-        Plots.plot!(pa_lane, c.a.running.lane[idx], title="a lane", label="")
-        Plots.plot!(pb_lane, c.b.running.lane[idx], title="b lane", label="")
-        Plots.plot!(pa_control, c.a.running.control[idx], title="a control", label="")
-        Plots.plot!(pb_control, c.b.running.control[idx], title="b control", label="")
-        Plots.plot!(pa_velocity, c.a.running.velocity[idx], title="a velocity", label="")
-        Plots.plot!(pb_velocity, c.b.running.velocity[idx], title="b velocity", label="")
-        Plots.plot!(pa_terminal, c.a.running.terminal[idx], title="a terminal", label="")
-        Plots.plot!(pb_terminal, c.b.running.terminal[idx], title="b terminal", label="")
+        if is_cumulative
+            Plots.plot!(pa_lane, cumsum(c.a.running.lane[idx]), title="a lane", label="")
+            Plots.plot!(pb_lane, cumsum(c.b.running.lane[idx]), title="b lane", label="")
+            Plots.plot!(pa_control, cumsum(c.a.running.control[idx]), title="a control", label="")
+            Plots.plot!(pb_control, cumsum(c.b.running.control[idx]), title="b control", label="")
+            Plots.plot!(pa_velocity, cumsum(c.a.running.velocity[idx]), title="a velocity", label="")
+            Plots.plot!(pb_velocity, cumsum(c.b.running.velocity[idx]), title="b velocity", label="")
+            Plots.plot!(pa_terminal, cumsum(c.a.running.terminal[idx]), title="a terminal", label="")
+            Plots.plot!(pb_terminal, cumsum(c.b.running.terminal[idx]), title="b terminal", label="")
+            Plots.plot!(pa_total, cumsum(c.a.running.total[idx]), title="a total", label="")
+            Plots.plot!(pb_total, cumsum(c.b.running.total[idx]), title="b total", label="")
+        else
+            Plots.plot!(pa_lane, c.a.running.lane[idx], title="a lane", label="")
+            Plots.plot!(pb_lane, c.b.running.lane[idx], title="b lane", label="")
+            Plots.plot!(pa_control, c.a.running.control[idx], title="a control", label="")
+            Plots.plot!(pb_control, c.b.running.control[idx], title="b control", label="")
+            Plots.plot!(pa_velocity, c.a.running.velocity[idx], title="a velocity", label="")
+            Plots.plot!(pb_velocity, c.b.running.velocity[idx], title="b velocity", label="")
+            Plots.plot!(pa_terminal, c.a.running.terminal[idx], title="a terminal", label="")
+            Plots.plot!(pb_terminal, c.b.running.terminal[idx], title="b terminal", label="")
+            Plots.plot!(pa_total, c.a.running.total[idx], title="a total", label="")
+            Plots.plot!(pb_total, c.b.running.total[idx], title="b total", label="")
+        end
     end
 
-    Plots.plot(pa_lane, pa_control, pa_velocity, pa_terminal, pb_lane, pb_control, pb_velocity, pb_terminal, layout=(2, 4))
+    Plots.plot(pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=(2, 5))
 end

@@ -158,9 +158,22 @@ sp_costs_tr = trim_by_steps(sp_costs, sp_steps; min_steps=trim_steps)
 gnep_costs_tr = trim_by_steps(gnep_costs, gnep_steps; min_steps=trim_steps)
 bilevel_costs_tr = trim_by_steps(bilevel_costs, bilevel_steps; min_steps=trim_steps)
 
-plot_running_costs(sp_costs; T=trim_steps)
-plot_running_costs(gnep_costs; T=trim_steps)
-plot_running_costs(bilevel_costs; T=trim_steps)
+# find common runs
+common_runs = intersect(keys(gnep_costs_tr), keys(bilevel_costs_tr))
+gnep_costs_com = Dict(i => gnep_costs_tr[i] for i in common_runs)
+bilevel_costs_com = Dict(i => bilevel_costs_tr[i] for i in common_runs)
+
+#plot_running_costs(sp_costs; T=trim_steps)
+#plot_running_costs(gnep_costs; T=trim_steps)
+#plot_running_costs(bilevel_costs; T=trim_steps)
+#plot_running_costs(sp_costs_tr; T=trim_steps, is_cumulative=true)
+#plot_running_costs(gnep_costs_com; T=trim_steps, is_cumulative=true)
+#plot_running_costs(bilevel_costs_com; T=trim_steps, is_cumulative=true)
+
+# this does't work right now
+#gnep_costs_com_arr = extract_costs(gnep_costs_tr, common_runs)
+#bilevel_costs_com_arr = extract_costs(bilevel_costs_tr, common_runs)
+#all_costs = (ind=common_runs, gnep=gnep_costs_com_arr, bilevel=bilevel_costs_com_arr) 
 
 all_costs = extract_intersected_costs(gnep_costs_tr, gnep_costs_tr, bilevel_costs_tr)
 
