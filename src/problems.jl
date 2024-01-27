@@ -208,7 +208,6 @@ function solve(epec, θ; tol=1e-6, max_iters=30)
     while !converged
         iters += 1
 
-       
         (; status, info) = solve_low_level!(low_level, θ) # this should be redundant after the initial iteration
         solution_graph = get_local_solution_graph(low_level, θ)
         converged = true

@@ -15,19 +15,19 @@ using JLD2
 include("racing.jl")
 include("random_racing_helper.jl")
 
-probs = setup(; T=10, 
-	Δt = 0.1, 
-	r = 1.0, 
-	α1 = 1e-3,
-	α2 = 1e-4,
-	α3 = 1e-2,	
-	β = 1e-2, #.5, # sensitive to high values
-	cd = 0.2, #0.25,
-	u_max_nominal = 1.0, 
-	u_max_drafting = 2.5, #2.5, # sensitive to high difference over nominal 
-	box_length = 5.0,
-	box_width = 2.0,
-	lat_max = 1.5);
+probs = setup(; T=10,
+    Δt=0.1,
+    r=1.0,
+    α1=1e-2,
+    α2=1e-4,
+    α3=1e-2,
+    β=1e-2, #.5, # sensitive to high values
+    cd=0.2, #0.25,
+    u_max_nominal=1.0,
+    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
+    box_length=5.0,
+    box_width=2.0,
+    lat_max=1.5);
 
 is_x0s_from_file = true;
 is_results_from_file = false;
@@ -110,21 +110,27 @@ else
     jldsave("$(data_dir)/results_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, x0s, sp_results, gnep_results, bilevel_results, elapsed)
 end
 
-# only look up to time_steps
+# valid only if we have at least time_steps number of time steps 
 sp_costs = Dict()
 gnep_costs = Dict()
 bilevel_costs = Dict()
 
-for (index, sp_res) in sp_results
-    sp_costs[index] = compute_realized_cost(Dict(i => sp_res[i] for i in 1:time_steps))
+for (index, res) in sp_results
+    if length(res) >= time_steps
+        sp_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
+    end
 end
 
-for (index, gnep_res) in gnep_results
-    gnep_costs[index] = compute_realized_cost(Dict(i => gnep_res[i] for i in 1:time_steps))
+for (index, res) in gnep_results
+    if length(res) >= time_steps
+        gnep_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
+    end
 end
 
-for (index, bilevel_res) in bilevel_results
-    bilevel_costs[index] = compute_realized_cost(Dict(i => bilevel_res[i] for i in 1:time_steps))
+for (index, res) in bilevel_results
+    if length(res) >= time_steps
+        bilevel_costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:time_steps))
+    end
 end
 
 # sp fails so much, so ignoring for now..
