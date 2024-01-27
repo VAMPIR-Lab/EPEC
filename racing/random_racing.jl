@@ -29,13 +29,13 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-is_x0s_from_file = true;
+is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_100samples_2024-01-26_1822";
-results_filename = "results_x0s_100samples_2024-01-26_1321_2024-01-26_1343_150steps";
-sample_size = 100;
-time_steps = 100;
+results_filename = "results_x0s_100samples_2024-01-26_1822_2024-01-26_2132_100steps";
+sample_size = 10000;
+time_steps = 200;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
@@ -57,15 +57,18 @@ else
     jldsave("$(data_dir)/$(init_filename).jld2"; x0s, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
 end
 
+
 sp_results = []
 gnep_results = []
 bilevel_results = []
+elapsed = []
 
 if is_results_from_file
     results_file = jldopen("$(data_dir)/$(results_filename).jld2", "r")
     sp_results = results_file["sp_results"]
     gnep_results = results_file["gnep_results"]
     bilevel_results = results_file["bilevel_results"]
+    elapsed  = results_file["elapsed"] 
 else
     sp_results = Dict()
     gnep_results = Dict()
@@ -78,27 +81,27 @@ else
 
     for (index, x0) in x0s
         try
-            sp_res = solve_simulation(probs, time_steps; x0, only_want_sp=true)
+            sp_res = solve_simulation(probs, time_steps; x0=x0, only_want_sp=true)
             sp_results[index] = sp_res
-        catch erro
-            @info "sp failed $index: $x0"
-            println(erro)
+        catch er
+            @info "sp errored $index"
+            println(er)
         end
 
         try
-            gnep_res = solve_simulation(probs, time_steps; x0, only_want_gnep=true)
+            gnep_res = solve_simulation(probs, time_steps; x0=x0, only_want_gnep=true)
             gnep_results[index] = gnep_res
-        catch erro
-            @info "gnep failed $index: $x0"
-            println(erro)
+        catch er
+            @info "gnep errored $index"
+            println(er)
         end
 
         try
-            bilevel_res = solve_simulation(probs, time_steps; x0, only_want_gnep=false)
+            bilevel_res = solve_simulation(probs, time_steps; x0=x0)
             bilevel_results[index] = bilevel_res
-        catch erro
-            @info "bilevel failed $index: $x0"
-            println(erro)
+        catch er
+            @info "bilevel errored $index"
+            println(er)
         end
 
         #next!(prog)
@@ -135,6 +138,7 @@ end
 
 # sp fails so much, so ignoring for now..
 all_costs = extract_costs(gnep_costs, gnep_costs, bilevel_costs)
+inds = all_costs.ind
 
 @info "total Δcost = bilevel - gnep"
 Δcost_total = compute_player_Δcost(all_costs.gnep.total, all_costs.bilevel.total)

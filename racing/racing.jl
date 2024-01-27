@@ -352,7 +352,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
         bilevel_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
         bilevel_init = [bilevel_init; x0]
-        @info "(1) bilevel..."
+        #@info "(1) bilevel..."
         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
         if bilevel_success
@@ -370,7 +370,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         gnep_init = zeros(probs.gnep.top_level.n)
         gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
         gnep_init = [gnep_init; x0]
-        @info "(5) gnep..."
+        #@info "(5) gnep..."
         gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
         if gnep_success
@@ -386,7 +386,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
                 bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
                 bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
                 bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
-                @info "(2) gnep->bilevel..."
+                #@info "(2) gnep->bilevel..."
                 bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
                 if bilevel_success
@@ -414,7 +414,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         sp_a_init[probs.sp_a.top_level.n+6*T+1:probs.sp_a.top_level.n+6*T+8] = x0 # right now parameters are expected to be contiguous
         #sp_a_init = [sp_a_init; x0]; 
 
-        @info "(7a) sp_a..."
+        #@info "(7a) sp_a..."
         θ_sp_a_success, θ_sp_a = attempt_solve(probs.sp_a, sp_a_init)
         #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # if it fails:
@@ -426,7 +426,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         sp_b_init[probs.sp_b.top_level.n+6*T+1:probs.sp_b.top_level.n+6*T+8] = [x0[5:8]; x0[1:4]]
         #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
 
-        @info "(7b) sp_b..."
+        #@info "(7b) sp_b..."
         θ_sp_b_success, θ_sp_b = attempt_solve(probs.sp_a, sp_b_init)
         #show_me([θ_sp_b[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60]; θ_sp_b[probs.sp_b.x_inds]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # if it fails:
@@ -522,6 +522,7 @@ end
 
 function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want_gnep=false, only_want_sp=false)
     lat_max = probs.params.lat_max
+    status = "ok"
     x0a = x0[1:4]
     x0b = x0[5:8]
 
@@ -530,13 +531,16 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         @info "Sim timestep $t:"
         # check initial condition feasibility
         if col(x0a, x0b, probs.params.r)[1] <= 0 - 1e-4
-            @info("Infeasible initial condition: Collision")
+            status = "Infeasible initial condition: Collision"
+            @info(status)
             break
         elseif x0a[1] < -lat_max - 1e-4 || x0a[1] > lat_max + 1e-4 || x0b[1] < -lat_max - 1e-4 || x0b[1] > lat_max + 1e-4
-            @info("Infeasible initial condition: Out of lanes")
+            status =  "Infeasible initial condition: Out of lanes"
+            @info(status)
             break
         elseif x0a[4] < probs.params.min_long_vel - 1e-4 || x0b[4] < probs.params.min_long_vel - 1e-4
-            @info("Infeasible initial condition: Invalid velocity")
+            status = "Infeasible initial condition: Invalid velocity"
+            @info(status)
             break
         end
 
@@ -549,7 +553,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         feasible = all(all(feasible_arr[i][1]) for i in 1:2) # I think this is fine
 
 
-        if !feasible || any(r.P1[:, 4] .< -1e-4) || any(r.P2[:, 4] .< -1e-4) || any(r.P1[:, 1] .< -lat_max - 1e-4) || any(r.P2[:, 1] .< -lat_max - 1e-4) || any(r.P1[:, 1] .> 1e-4 + lat_max) || any(r.P2[:, 1] .> lat_max + 1e-4)
+        if !feasible || any(r.P1[:, 4] .< probs.params.min_long_vel - 1e-4) || any(r.P2[:, 4] .< probs.params.min_long_vel - 1e-4) || any(r.P1[:, 1] .< -lat_max - 1e-4) || any(r.P2[:, 1] .< -lat_max - 1e-4) || any(r.P1[:, 1] .> 1e-4 + lat_max) || any(r.P2[:, 1] .> lat_max + 1e-4)
             if (feasible)
                 # this must never trigger
                 @infiltrate
@@ -584,7 +588,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         x0a = pointmass(xa, ua, probs.params.Δt, probs.params.cd)
         x0b = pointmass(xb, ub, probs.params.Δt, probs.params.cd)
 
-        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z)
+        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z, status)
         x0 = [x0a; x0b]
     end
     results
