@@ -118,15 +118,20 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
 end
 
 function compute_realized_cost(res)
-    z_arr = zeros(length(res), 12)
+    T = length(res)
+    Xa = zeros(xdim * T)
+    Ua = zeros(udim * T)
+    Xb = zeros(xdim * T)
+    Ub = zeros(udim * T)
 
     for t in eachindex(res)
-        z_arr[t, 1:4] = res[t].x0[1:4]
-        z_arr[t, 5:6] = res[t].U1[1, :]
-        z_arr[t, 7:10] = res[t].x0[5:8]
-        z_arr[t, 11:12] = res[t].U2[1, :]
+        Xa[xdim*(t-1)+1:xdim*t] = res[t].x0[1:4]
+        Ua[udim*(t-1)+1:udim*t] = res[t].U1[1, :]
+        Xb[xdim*(t-1)+1:xdim*t] = res[t].x0[5:8]
+        Ub[udim*(t-1)+1:udim*t] = res[t].U2[1, :]
     end
-    Z = [z_arr[:]; zeros(8)] # making it work with f1(Z) and f2(Z)
+    Z = [Xa; Ua; Xb; Ub; zeros(8)] # making it work with f1(Z) and f2(Z)
+
     a_cost = probs.OP1.f(Z)
     b_cost = probs.OP2.f(Z)
     a_breakdown = f1_breakdown(Z; probs.params.α1, probs.params.α2, probs.params.α3, probs.params.β)
@@ -222,4 +227,30 @@ function print_mean_min_max(P1_cost_diff, P2_cost_diff, P1_rel_cost_diff, P2_rel
     println("P2 Δcost abs :  $(mean(P2_cost_diff))  $(std(P2_cost_diff)/sqrt(length(P1_cost_diff)))  $(minimum(P2_cost_diff))  $(maximum(P2_cost_diff))")
     println("P1 Δcost rel%:  $(mean(P1_rel_cost_diff)*100)  $(std(P1_rel_cost_diff)/sqrt(length(P1_cost_diff))*100)  $(minimum(P1_rel_cost_diff)*100)  $(maximum(P1_rel_cost_diff)*100)")
     println("P2 Δcost rel%:  $(mean(P2_rel_cost_diff)*100)  $(std(P2_rel_cost_diff)/sqrt(length(P1_cost_diff))*100)  $(minimum(P2_rel_cost_diff)*100)  $(maximum(P2_rel_cost_diff)*100)")
+end
+
+
+function plot_running_costs(costs; T=10)
+    pa_lane = Plots.plot()
+    pb_lane = Plots.plot()
+    pa_control = Plots.plot()
+    pb_control = Plots.plot()
+    pa_velocity = Plots.plot()
+    pb_velocity = Plots.plot()
+    pa_terminal = Plots.plot()
+    pb_terminal = Plots.plot()
+
+    for (index, c) in costs
+        idx = 1:min(T, length(c.a.running.lane))
+        Plots.plot!(pa_lane, c.a.running.lane[idx], title="a lane", label="")
+        Plots.plot!(pb_lane, c.b.running.lane[idx], title="b lane", label="")
+        Plots.plot!(pa_control, c.a.running.control[idx], title="a control", label="")
+        Plots.plot!(pb_control, c.b.running.control[idx], title="b control", label="")
+        Plots.plot!(pa_velocity, c.a.running.velocity[idx], title="a velocity", label="")
+        Plots.plot!(pb_velocity, c.b.running.velocity[idx], title="b velocity", label="")
+        Plots.plot!(pa_terminal, c.a.running.terminal[idx], title="a terminal", label="")
+        Plots.plot!(pb_terminal, c.b.running.terminal[idx], title="b terminal", label="")
+    end
+
+    Plots.plot(pa_lane, pa_control, pa_velocity, pa_terminal, pb_lane, pb_control, pb_velocity, pb_terminal, layout=(2, 4))
 end

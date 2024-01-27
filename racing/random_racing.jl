@@ -149,19 +149,19 @@ end
 #Plots.plot(histogram1, histogram2, histogram3, layout=(3, 1), legend=true, ylabel="# x0")
 
 
-#p = Plots.plot()
-#for (i, c) in bilevel_costs
-#    Plots.plot!(p, c.a.running.total, label="")
-#end
-#p
-
 #Plots.plot(a_cost_breakdown.running.lane)
 #Plots.plot!(b_cost_breakdown.running.lane)
 
 # trim with specified time steps
-sp_costs_tr = trim_by_steps(sp_costs, sp_steps; min_steps=time_steps)
-gnep_costs_tr = trim_by_steps(gnep_costs, gnep_steps; min_steps=time_steps)
-bilevel_costs_tr = trim_by_steps(bilevel_costs, bilevel_steps; min_steps=time_steps)
+trim_steps = 100
+sp_costs_tr = trim_by_steps(sp_costs, sp_steps; min_steps=trim_steps)
+gnep_costs_tr = trim_by_steps(gnep_costs, gnep_steps; min_steps=trim_steps)
+bilevel_costs_tr = trim_by_steps(bilevel_costs, bilevel_steps; min_steps=trim_steps)
+
+plot_running_costs(sp_costs; T=trim_steps)
+plot_running_costs(gnep_costs; T=trim_steps)
+plot_running_costs(bilevel_costs; T=trim_steps)
+
 all_costs = extract_intersected_costs(gnep_costs_tr, gnep_costs_tr, bilevel_costs_tr)
 
 @info "total Δcost = bilevel - gnep"
