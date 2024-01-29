@@ -596,7 +596,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         x0a = pointmass(xa, ua, probs.params.Δt, probs.params.cd)
         x0b = pointmass(xb, ub, probs.params.Δt, probs.params.cd)
 
-        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z)
+        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z, status)
         x0 = [x0a; x0b]
     end
     results
