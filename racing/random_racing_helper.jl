@@ -292,3 +292,28 @@ function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alph
     title = Plots.plot(title="$(sup_title)", grid=false, showaxis=false, bottom_margin=-50Plots.px)
     Plots.plot(title, pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=@layout([A{0.01h}; (2, 5)]))
 end
+
+function plot_x0s(data_dict; lat = 2.0, ymax = 3.0, rad=0.5)
+    plots = [] 
+    circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
+    circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
+
+    for (key, values) in data_dict
+        p = Plots.plot()
+        x, y, u, v = values[1:4]
+        circ_x_shifted_A = circ_x .+ x
+        circ_y_shifted_A = circ_y .+ y
+        Plots.plot!(circ_x_shifted_A, circ_y_shifted_A, line=:path, color=:blue, label="")
+        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:blue, label="")
+       
+        x, y, u, v = values[5:8]
+        circ_x_shifted_B = circ_x .+ x
+        circ_y_shifted_B = circ_y .+ y
+        Plots.plot!(circ_x_shifted_B, circ_y_shifted_B, line=:path, color=:red, label="")
+        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:red, label="")
+        Plots.plot!([-lat, -lat], [-ymax, ymax], color=:black, label="")
+        Plots.plot!([+lat, +lat], [-ymax, ymax], color=:black, label="")
+        push!(plots, p)
+    end
+    Plots.plot(plots...)
+end

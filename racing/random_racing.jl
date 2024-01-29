@@ -29,11 +29,11 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-is_x0s_from_file = false;
-is_results_from_file = false;
+is_x0s_from_file = true;
+is_results_from_file = true;
 data_dir = "data"
-init_filename = "x0s_10000samples_2024-01-26_2216";
-results_filename = "results_x0s_10000samples_2024-01-26_2216_2024-01-27_2035_200steps";
+init_filename = "x0s_100samples_2024-01-27_1012";
+results_filename = "results_x0s_100samples_2024-01-27_1012_2024-01-27_1026_100steps";
 sample_size = 10000;
 time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
@@ -79,7 +79,7 @@ else
 
     start = time()
     x0s_len = length(x0s)
-    progress = 0 
+    progress = 0
 
     for (index, x0) in x0s
         try
@@ -108,7 +108,7 @@ else
 
         #next!(prog)
         global progress
-        progress += 1;
+        progress += 1
         @info "Progress $(progress/x0s_len*100)%"
     end
     elapsed = time() - start
@@ -129,7 +129,7 @@ bilevel_costs = Dict()
 
 # trim with specified time steps
 trim_steps = 100
-is_trimming = false # too much for plots otherwise
+is_trimming = true # too much for plots otherwise
 #gnep_costs_tr = trim_by_steps(gnep_costs, gnep_steps; min_steps=trim_steps)
 #bilevel_costs_tr = trim_by_steps(bilevel_costs, bilevel_steps; min_steps=trim_steps)
 
@@ -172,9 +172,11 @@ for (index, res) in bilevel_results
     end
 end
 
-@info "Average sp time steps: $(mean(values(sp_steps)))"
-@info "Average gnep time steps: $(mean(values(gnep_steps)))"
-@info "Average bilevel time steps: $(mean(values(bilevel_steps)))"
+#@info "Average sp time steps: $(mean(values(sp_steps)))"
+#@info "Average gnep time steps: $(mean(values(gnep_steps)))"
+#@info "Average bilevel time steps: $(mean(values(bilevel_steps)))"
+
+
 #bins = 1:10:time_steps+1
 #histogram1 = histogram(collect(values(sp_steps)), bins=bins, label="sp")
 #histogram2 = histogram(collect(values(gnep_steps)), bins=bins, label="gnep")
@@ -185,12 +187,16 @@ end
 #Plots.plot!(b_cost_breakdown.running.lane)
 
 # find common runs
-#common_runs = intersect(keys(gnep_costs_tr), keys(bilevel_costs_tr))
+common_runs = intersect(keys(gnep_costs), keys(bilevel_costs))
 #gnep_costs_com = Dict(i => gnep_costs_tr[i] for i in common_runs)
 #bilevel_costs_com = Dict(i => bilevel_costs_tr[i] for i in common_runs)
+plot_x0s(Dict(i => x0s[i] for i in common_runs))
 
+#collect(x0s[common_runs])
 
-plot_running_costs(sp_costs; T=trim_steps, is_cumulative=false, alpha=.2, sup_title="sp running costs")
+#Plots.scatter(x0s[:, 1], x0_arr[:, 2], aspect_ratio=:equal, legend=false)
+#Plots.scatter!(x0_arr[:, 5], x0_arr[:, 6], aspect_ratio=:equal, legend=false)
+#plot_running_costs(sp_costs; T=trim_steps, is_cumulative=false, alpha=.2, sup_title="sp running costs")
 #plot_running_costs(gnep_costs; T=trim_steps, is_cumulative=false, alpha=.1, sup_title="all gnep running costs")
 #plot_running_costs(bilevel_costs; T=trim_steps, is_cumulative=false, alpha=.1, sup_title="all bilevel running costs")
 #plot_running_costs(sp_costs; T=trim_steps, is_cumulative=true, alpha=.1, sup_title="sp cumulative running costs")
