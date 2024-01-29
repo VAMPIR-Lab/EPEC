@@ -1,14 +1,32 @@
-results_file = jldopen("$(data_dir)/$(results_filename).jld2", "r")
+#using EPEC
+#using GLMakie
+#using JLD2
+using Plots
+
+#include("racing.jl")
+include("random_racing_helper.jl")
+
+#probs = setup(; T=10,
+#    Δt=0.1,
+#    r=1.0,
+#    α1=1e-2,
+#    α2=1e-4,
+#    α3=1e-2,
+#    β=1e-2, #.5, # sensitive to high values
+#    cd=0.2, #0.25,
+#    u_max_nominal=1.0,
+#    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
+#    box_length=5.0,
+#    box_width=2.0,
+#    lat_max=1.5);
+
 data_dir = "data"
-res1_filename = "results_1_x0s_10samples_2024-01-29_1516_2024-01-29_1517_100steps.jld2";
-res2_filename = "results_2_x0s_10samples_2024-01-29_1516_2024-01-29_1518_100steps.jld2";
+x0s_filename = "x0s_100samples_2024-01-29_1537"
+results_suffix = "_x0s_100samples_2024-01-29_1537_2024-01-29_1539_100steps.jld2";
+init_file = jldopen("$(data_dir)/$(x0s_filename).jld2", "r")
+x0s = init_file["x0s"]
 
-res1_file = jldopen("$(data_dir)/$(res1_filename)", "r")
-res2_file = jldopen("$(data_dir)/$(res2_filename)", "r")
-res1 = res1_file["results"]
-res2 = res2_file["results"]
-
-function process(results; is_trimming=false, trim_steps=100)
+function process(results; is_trimming=true, trim_steps=100)
 	costs = Dict()
 	steps = Dict()
 
@@ -19,6 +37,7 @@ function process(results; is_trimming=false, trim_steps=100)
 		if is_trimming
 			if len >= trim_steps
 				costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:trim_steps))
+				#costs[index] = compute_realized_cost(res)
 			end
 		else
 			costs[index] = compute_realized_cost(res)
@@ -27,9 +46,46 @@ function process(results; is_trimming=false, trim_steps=100)
 	(; costs, steps)
 end
 
-res1_processed = process(res1)
-res2_processed = process(res2)
+modes = 1:10
+results = Dict()
 
+for i in modes
+	file = jldopen("$(data_dir)/results_mode$(i)$(results_suffix)", "r")
+	results[i] = process(file["results"])
+end
+
+indices = results[1].costs |> keys |> collect |> sort
+b_steps_basis = mean([results[1].steps[i] for i in indices])
+b_total_costs_basis = mean([results[1].costs[i].b.final.total for i in indices])
+
+modes_sorted = sort(collect(keys(results)))
+
+for mode in modes_sorted
+	res = results[mode]
+	inds = res.costs |> keys |> collect |> sort
+	b_steps = [res.steps[i] for i in inds]
+	b_total_costs = [res.costs[i].b.final.total for i in inds]
+	print_mean_min_max(b_total_costs; title="mode $(mode) b costs")
+end
+
+for mode in modes_sorted
+	res = results[mode]
+	inds = res.costs |> keys |> collect |> sort
+	a_steps = [res.steps[i] for i in inds]
+	a_total_costs = [res.costs[i].a.final.total for i in inds]
+	print_mean_min_max(a_total_costs; title="mode $(mode) a costs")
+end
+
+
+for mode in modes_sorted
+	res = results[mode]
+	inds = res.costs |> keys |> collect |> sort
+	b_steps = [res.steps[i] for i in inds]
+	print_mean_min_max(b_steps; title="mode $(mode) steps")
+end
+
+
+#plot_x0s(x0s)
 #@info "Average sp time steps: $(mean(values(sp_steps)))"
 #@info "Average gnep time steps: $(mean(values(gnep_steps)))"
 #@info "Average bilevel time steps: $(mean(values(bilevel_steps)))"
@@ -66,35 +122,35 @@ res2_processed = process(res2)
 #bilevel_costs_com_arr = extract_costs(bilevel_costs_tr, common_runs)
 #all_costs = (ind=common_runs, gnep=gnep_costs_com_arr, bilevel=bilevel_costs_com_arr) 
 
-all_costs = extract_intersected_costs(gnep_costs, gnep_costs, bilevel_costs)
-@info "Until $(trim_steps) time steps (n=$(length(all_costs.gnep.total)))"
-@info "total Δcost = bilevel - gnep"
-Δcost_total = compute_Δcost(all_costs.gnep.total, all_costs.bilevel.total)
-print_mean_min_max(Δcost_total)
+#all_costs = extract_intersected_costs(gnep_costs, gnep_costs, bilevel_costs)
+#@info "Until $(trim_steps) time steps (n=$(length(all_costs.gnep.total)))"
+#@info "total Δcost = bilevel - gnep"
+#Δcost_total = compute_Δcost(all_costs.gnep.total, all_costs.bilevel.total)
+#print_mean_min_max(Δcost_total)
 
-@info "lane Δcost = bilevel - gnep"
-Δcost_lane = compute_Δcost(all_costs.gnep.lane, all_costs.bilevel.lane)
-print_mean_min_max(Δcost_lane)
+#@info "lane Δcost = bilevel - gnep"
+#Δcost_lane = compute_Δcost(all_costs.gnep.lane, all_costs.bilevel.lane)
+#print_mean_min_max(Δcost_lane)
 
-@info "control Δcost = bilevel - gnep"
-Δcost_control = compute_Δcost(all_costs.gnep.control, all_costs.bilevel.control)
-print_mean_min_max(Δcost_control)
+#@info "control Δcost = bilevel - gnep"
+#Δcost_control = compute_Δcost(all_costs.gnep.control, all_costs.bilevel.control)
+#print_mean_min_max(Δcost_control)
 
-@info "velocity Δcost = bilevel - gnep"
-Δcost_velocity = compute_Δcost(all_costs.gnep.velocity, all_costs.bilevel.velocity)
-print_mean_min_max(Δcost_velocity)
+#@info "velocity Δcost = bilevel - gnep"
+#Δcost_velocity = compute_Δcost(all_costs.gnep.velocity, all_costs.bilevel.velocity)
+#print_mean_min_max(Δcost_velocity)
 
-@info "terminal Δcost = bilevel - gnep"
-Δcost_terminal = compute_Δcost(all_costs.gnep.terminal, all_costs.bilevel.terminal)
+#@info "terminal Δcost = bilevel - gnep"
+#Δcost_terminal = compute_Δcost(all_costs.gnep.terminal, all_costs.bilevel.terminal)
 #print_mean_min_max(Δcost_terminal)
 
 # best
-P1_most_bilevel_adv_ind = all_costs.ind[argmax(Δcost_total.P1_abs)]
-P2_most_bilevel_adv_ind = all_costs.ind[argmax(Δcost_total.P2_abs)]
+#P1_most_bilevel_adv_ind = all_costs.ind[argmax(Δcost_total.P1_abs)]
+#P2_most_bilevel_adv_ind = all_costs.ind[argmax(Δcost_total.P2_abs)]
 #@assert(best_ind_P1 == best_ind_P2)
 ## worst
-P1_most_gnep_adv_ind = all_costs.ind[argmin(Δcost_total.P1_abs)]
-P2_most_gnep_adv_ind = all_costs.ind[argmin(Δcost_total.P2_abs)]
+#P1_most_gnep_adv_ind = all_costs.ind[argmin(Δcost_total.P1_abs)]
+#P2_most_gnep_adv_ind = all_costs.ind[argmin(Δcost_total.P2_abs)]
 #@assert(worst_ind_P1 == worst_ind_P2)
 
 #animate(probs, gnep_results[P1_most_bilevel_adv_ind]; save=true, filename="P1_most_bilevel_advantage.mp4");

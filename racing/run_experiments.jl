@@ -22,17 +22,18 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-is_x0s_from_file = false;
+is_x0s_from_file = true;
 is_results_from_file = false;
 data_dir = "data"
-init_filename = "x0s_10samples_2024-01-29_1516";
-sample_size = 100;
+init_filename = "x0s_5000samples_2024-01-29_1707";
+sample_size = 5000;
 time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
 lat_max = probs.params.lat_max;
 r_offset_min = probs.params.r;
+date_now = Dates.format(now(),"YYYY-mm-dd_HHMM");
 
 if (is_x0s_from_file)
     # WARNING params not loaded from file
@@ -40,10 +41,11 @@ if (is_x0s_from_file)
     x0s = init_file["x0s"]
 else
     x0s = generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
-    init_filename = "x0s_$(sample_size)samples_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))"
+    init_filename = "x0s_$(sample_size)samples_$(date_now)"
     jldsave("$(data_dir)/$(init_filename).jld2"; x0s, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
 	x0s
 end
+
 
 ```
 Experiments:
@@ -63,7 +65,6 @@ function solve_for_x0s(x0s, mode)
     for (index, x0) in x0s
         try
             res = solve_simulation(probs, time_steps; x0=x0, mode=mode)
-			@infiltrate
             results[index] = res
         catch er
             @info "errored $index"
@@ -74,13 +75,9 @@ function solve_for_x0s(x0s, mode)
         @info "Progress $(progress/x0s_len*100)%"
     end
     elapsed = time() - start
-    jldsave("$(data_dir)/results_mode$(mode)_$(init_filename)_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))_$(time_steps)steps.jld2"; params=probs.params, results, elapsed)
+    jldsave("$(data_dir)/results_mode$(mode)_($(init_filename))_$(date_now)_$(time_steps)steps.jld2"; params=probs.params, results, elapsed)
 end
-
-prog = 0
 
 for mode in 1:10
 	solve_for_x0s(x0s, mode)
-	prog += 1
-	@info ">>> Total Progress $(prog/10*100)%"
 end
