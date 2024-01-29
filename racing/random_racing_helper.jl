@@ -221,7 +221,7 @@ function extract_intersected_costs(sp_costs, gnep_costs, bilevel_costs)
     cost
 end
 
-function compute_player_Δcost(baseline_cost, other_cost)
+function compute_Δcost(baseline_cost, other_cost)
     P1_baseline_cost = [v[1] for v in baseline_cost]
     P1_other_cost = [v[1] for v in other_cost]
     P2_baseline_cost = [v[2] for v in baseline_cost]
@@ -233,24 +233,20 @@ function compute_player_Δcost(baseline_cost, other_cost)
     P1_rel_Δcost = P1_abs_Δcost ./ abs.(P1_baseline_cost)
     P2_rel_Δcost = P2_abs_Δcost ./ abs.(P2_baseline_cost)
 
-    P1_max_ind = argmax(P1_abs_Δcost)
-    P1_min_ind = argmin(P1_abs_Δcost)
-    P2_max_ind = argmax(P2_abs_Δcost)
-    P2_min_ind = argmin(P2_abs_Δcost)
-    Δcost = (; P1_abs=P1_abs_Δcost, P2_abs=P2_abs_Δcost, P1_rel=P1_rel_Δcost, P2_rel=P2_rel_Δcost, P1_max_ind, P1_min_ind, P2_max_ind, P2_min_ind)
+    Δcost = (; P1_abs=P1_abs_Δcost, P2_abs=P2_abs_Δcost, P1_rel=P1_rel_Δcost, P2_rel=P2_rel_Δcost)
     Δcost
 end
 
-function print_mean_min_max(P1_cost_diff, P2_cost_diff, P1_rel_cost_diff, P2_rel_cost_diff)
+function print_mean_min_max(Δcost)
     println("		mean 		        stderr 		    min		        max")
-    println("P1 Δcost abs :  $(mean(P1_cost_diff))  $(std(P1_cost_diff)/sqrt(length(P1_cost_diff)))  $(minimum(P1_cost_diff))  $(maximum(P1_cost_diff))")
-    println("P2 Δcost abs :  $(mean(P2_cost_diff))  $(std(P2_cost_diff)/sqrt(length(P1_cost_diff)))  $(minimum(P2_cost_diff))  $(maximum(P2_cost_diff))")
-    println("P1 Δcost rel%:  $(mean(P1_rel_cost_diff)*100)  $(std(P1_rel_cost_diff)/sqrt(length(P1_cost_diff))*100)  $(minimum(P1_rel_cost_diff)*100)  $(maximum(P1_rel_cost_diff)*100)")
-    println("P2 Δcost rel%:  $(mean(P2_rel_cost_diff)*100)  $(std(P2_rel_cost_diff)/sqrt(length(P1_cost_diff))*100)  $(minimum(P2_rel_cost_diff)*100)  $(maximum(P2_rel_cost_diff)*100)")
+    println("P1 Δcost abs :  $(mean(Δcost.P1_abs))  $(std(Δcost.P1_abs)/sqrt(length(Δcost.P1_abs)))  $(minimum(Δcost.P1_abs))  $(maximum(Δcost.P1_abs))")
+    println("P2 Δcost abs :  $(mean(Δcost.P2_abs))  $(std(Δcost.P2_abs)/sqrt(length(Δcost.P2_abs)))  $(minimum(Δcost.P2_abs))  $(maximum(Δcost.P2_abs))")
+    println("P1 Δcost rel%:  $(mean(Δcost.P1_rel) * 100)  $(std(Δcost.P1_rel)/sqrt(length(Δcost.P1_rel)) * 100)  $(minimum(Δcost.P1_rel) * 100)  $(maximum(Δcost.P1_rel) * 100)")
+    println("P2 Δcost rel%:  $(mean(Δcost.P2_rel) * 100)  $(std(Δcost.P2_rel)/sqrt(length(Δcost.P2_rel)) * 100)  $(minimum(Δcost.P2_rel) * 100)  $(maximum(Δcost.P2_rel) * 100)")
 end
 
 
-function plot_running_costs(costs; T=10, is_cumulative=false)
+function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alpha = .2)
     pa_lane = Plots.plot()
     pb_lane = Plots.plot()
     pa_control = Plots.plot()
@@ -262,33 +258,37 @@ function plot_running_costs(costs; T=10, is_cumulative=false)
     pa_total = Plots.plot()
     pb_total = Plots.plot()
 
-
     for (index, c) in costs
         idx = 1:min(T, length(c.a.running.lane))
+       
         if is_cumulative
-            Plots.plot!(pa_lane, cumsum(c.a.running.lane[idx]), title="a lane", label="")
-            Plots.plot!(pb_lane, cumsum(c.b.running.lane[idx]), title="b lane", label="")
-            Plots.plot!(pa_control, cumsum(c.a.running.control[idx]), title="a control", label="")
-            Plots.plot!(pb_control, cumsum(c.b.running.control[idx]), title="b control", label="")
-            Plots.plot!(pa_velocity, cumsum(c.a.running.velocity[idx]), title="a velocity", label="")
-            Plots.plot!(pb_velocity, cumsum(c.b.running.velocity[idx]), title="b velocity", label="")
-            Plots.plot!(pa_terminal, cumsum(c.a.running.terminal[idx]), title="a terminal", label="")
-            Plots.plot!(pb_terminal, cumsum(c.b.running.terminal[idx]), title="b terminal", label="")
-            Plots.plot!(pa_total, cumsum(c.a.running.total[idx]), title="a total", label="")
-            Plots.plot!(pb_total, cumsum(c.b.running.total[idx]), title="b total", label="")
+            Plots.plot!(pa_lane, alpha=alpha, cumsum(c.a.running.lane[idx]), title="a lane", label="")
+            Plots.plot!(pb_lane, alpha=alpha, cumsum(c.b.running.lane[idx]), title="b lane", label="")
+            Plots.plot!(pa_control, alpha=alpha, cumsum(c.a.running.control[idx]), title="a control", label="")
+            Plots.plot!(pb_control, alpha=alpha, cumsum(c.b.running.control[idx]), title="b control", label="")
+            Plots.plot!(pa_velocity, alpha=alpha, cumsum(c.a.running.velocity[idx]), title="a velocity", label="")
+            Plots.plot!(pb_velocity, alpha=alpha, cumsum(c.b.running.velocity[idx]), title="b velocity", label="")
+            Plots.plot!(pa_terminal, alpha=alpha, cumsum(c.a.running.terminal[idx]), title="a terminal", label="")
+            Plots.plot!(pb_terminal, alpha=alpha, cumsum(c.b.running.terminal[idx]), title="b terminal", label="")
+            Plots.plot!(pa_total, alpha=alpha, cumsum(c.a.running.total[idx]), title="a total", label="")
+            Plots.plot!(pb_total, alpha=alpha, cumsum(c.b.running.total[idx]), title="b total", label="")
         else
-            Plots.plot!(pa_lane, c.a.running.lane[idx], title="a lane", label="")
-            Plots.plot!(pb_lane, c.b.running.lane[idx], title="b lane", label="")
-            Plots.plot!(pa_control, c.a.running.control[idx], title="a control", label="")
-            Plots.plot!(pb_control, c.b.running.control[idx], title="b control", label="")
-            Plots.plot!(pa_velocity, c.a.running.velocity[idx], title="a velocity", label="")
-            Plots.plot!(pb_velocity, c.b.running.velocity[idx], title="b velocity", label="")
-            Plots.plot!(pa_terminal, c.a.running.terminal[idx], title="a terminal", label="")
-            Plots.plot!(pb_terminal, c.b.running.terminal[idx], title="b terminal", label="")
-            Plots.plot!(pa_total, c.a.running.total[idx], title="a total", label="")
-            Plots.plot!(pb_total, c.b.running.total[idx], title="b total", label="")
+            Plots.plot!(pa_lane, alpha=alpha, c.a.running.lane[idx], title="a lane", label="")
+            Plots.plot!(pb_lane, alpha=alpha, c.b.running.lane[idx], title="b lane", label="")
+            Plots.plot!(pa_control, alpha=alpha, c.a.running.control[idx], title="a control", label="")
+            Plots.plot!(pb_control, alpha=alpha, c.b.running.control[idx], title="b control", label="")
+            Plots.plot!(pa_velocity, alpha=alpha, c.a.running.velocity[idx], title="a velocity", label="")
+            Plots.plot!(pb_velocity, alpha=alpha, c.b.running.velocity[idx], title="b velocity", label="")
+            Plots.plot!(pa_terminal, alpha=alpha, c.a.running.terminal[idx], title="a terminal", label="")
+            Plots.plot!(pb_terminal, alpha=alpha, c.b.running.terminal[idx], title="b terminal", label="")
+            Plots.plot!(pa_total, alpha=alpha, c.a.running.total[idx], title="a total", label="")
+            Plots.plot!(pb_total, alpha=alpha, c.b.running.total[idx], title="b total", label="")
         end
     end
 
-    Plots.plot(pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=(2, 5))
+    #Plots.plot(pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=(2, 5))
+    #Plots.plot!(title)
+
+    title = Plots.plot(title="$(sup_title)", grid=false, showaxis=false, bottom_margin=-50Plots.px)
+    Plots.plot(title, pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=@layout([A{0.01h}; (2, 5)]))
 end
