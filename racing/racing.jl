@@ -546,7 +546,8 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
 
         if is_x0_infeasible
             # currently status isn't saved
-            @info(status)
+            print(status);
+            print("\n")
             break
         end
 
