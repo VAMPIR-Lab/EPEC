@@ -78,6 +78,8 @@ else
     #prog = Progress(length(x0s), barlen=50)
 
     start = time()
+    x0s_len = length(x0s)
+    progress = 0 
 
     for (index, x0) in x0s
         try
@@ -105,6 +107,9 @@ else
         end
 
         #next!(prog)
+        global progress
+        progress += 1;
+        @info "Progress $(progress/x0s_len*100)%"
     end
     elapsed = time() - start
     #finish!(prog)

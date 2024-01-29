@@ -503,9 +503,9 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
     lowest_preference, Z = sorted_Z[1] # best pair
 
     if lowest_preference < 8
-        @info "Success $lowest_preference"
+        print("Success $lowest_preference\n")
     else
-        @info "Fail $lowest_preference"
+        print("Fail $lowest_preference\n")
     end
 
 
@@ -528,7 +528,8 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
 
     results = Dict()
     for t = 1:T
-        @info "Sim timestep $t:"
+        #@info "Sim timestep $t:"
+        print("Sim timestep $t: ")
         # check initial condition feasibility
         is_x0_infeasible = false 
 
