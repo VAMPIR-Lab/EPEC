@@ -45,6 +45,8 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
 
     x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
     #@infiltrate
+    x0s = Dict()
+    
     for (index, row) in enumerate(eachrow(x0_arr))
         x0s[index] = row
     end
@@ -174,6 +176,27 @@ function extract_costs(costs, keys)
     cost
 end
 
+function extract_costs(costs, steps)
+    index_arr = []
+    total_cost_arr = []
+    lane_cost_arr = []
+    control_cost_arr = []
+    velocity_cost_arr = []
+    terminal_cost_arr = []
+
+    for (index, c, s) in zip(costs, steps)
+        push!(index_arr, index)
+        push!(total_cost_arr, [index, s, c.a.final.total, c.b.final.total])
+        push!(lane_cost_arr, [s, c.a.final.lane, c.b.final.lane])
+        push!(control_cost_arr, [s, c.a.final.control, c.b.final.control])
+        push!(velocity_cost_arr, [s, c.a.final.velocity, c.b.final.velocity])
+        push!(terminal_cost_arr, [s, c.a.final.terminal, c.b.final.terminal])
+    end
+
+    cost = (ind=index_arr, sp=sp_extracted, gnep=gnep_extracted, bilevel=bilevel_extracted)
+    cost
+end
+
 function extract_intersected_costs(sp_costs, gnep_costs, bilevel_costs)
     index_arr = []
     sp_cost_arr = []
@@ -246,7 +269,7 @@ function print_mean_min_max(Δcost)
 end
 
 
-function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alpha = .2)
+function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alpha=0.2)
     pa_lane = Plots.plot()
     pb_lane = Plots.plot()
     pa_control = Plots.plot()
@@ -260,7 +283,7 @@ function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alph
 
     for (index, c) in costs
         idx = 1:min(T, length(c.a.running.lane))
-       
+
         if is_cumulative
             Plots.plot!(pa_lane, alpha=alpha, cumsum(c.a.running.lane[idx]), title="a lane", label="")
             Plots.plot!(pb_lane, alpha=alpha, cumsum(c.b.running.lane[idx]), title="b lane", label="")
@@ -293,8 +316,8 @@ function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alph
     Plots.plot(title, pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=@layout([A{0.01h}; (2, 5)]))
 end
 
-function plot_x0s(data_dict; lat = 2.0, ymax = 3.0, rad=0.5)
-    plots = [] 
+function plot_x0s(data_dict; lat=2.0, ymax=3.0, rad=0.5)
+    plots = []
     circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
     circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
 
@@ -305,7 +328,7 @@ function plot_x0s(data_dict; lat = 2.0, ymax = 3.0, rad=0.5)
         circ_y_shifted_A = circ_y .+ y
         Plots.plot!(circ_x_shifted_A, circ_y_shifted_A, line=:path, color=:blue, label="")
         Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:blue, label="")
-       
+
         x, y, u, v = values[5:8]
         circ_x_shifted_B = circ_x .+ x
         circ_y_shifted_B = circ_y .+ y

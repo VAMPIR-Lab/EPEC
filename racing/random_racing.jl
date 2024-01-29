@@ -29,12 +29,12 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-is_x0s_from_file = true;
-is_results_from_file = true;
+is_x0s_from_file = false;
+is_results_from_file = false;
 data_dir = "data"
-init_filename = "x0s_100samples_2024-01-27_1012";
-results_filename = "results_x0s_100samples_2024-01-27_1012_2024-01-27_1026_100steps";
-sample_size = 10000;
+init_filename = "x0s_10000samples_2024-01-26_2216";
+results_filename = "results_x0s_10000samples_2024-01-26_2216_2024-01-27_2035_200steps";
+sample_size = 10;
 time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
@@ -42,26 +42,18 @@ b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
 lat_max = probs.params.lat_max;
 r_offset_min = probs.params.r;
 
-x0s = Dict{Int,Vector{Float64}}()
 
 if (is_x0s_from_file)
     # WARNING params not loaded from file
     init_file = jldopen("$(data_dir)/$(init_filename).jld2", "r")
     x0s = init_file["x0s"]
-    #@infiltrate
-    #Plots.scatter(x0_arr[:, 1], x0_arr[:, 2], aspect_ratio=:equal, legend=false)
-    #Plots.scatter!(x0_arr[:, 5], x0_arr[:, 6], aspect_ratio=:equal, legend=false)
 else
     x0s = generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
     init_filename = "x0s_$(sample_size)samples_$(Dates.format(now(),"YYYY-mm-dd_HHMM"))"
     jldsave("$(data_dir)/$(init_filename).jld2"; x0s, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
+    x0s
 end
 
-
-sp_results = []
-gnep_results = []
-bilevel_results = []
-elapsed = []
 
 if is_results_from_file
     results_file = jldopen("$(data_dir)/$(results_filename).jld2", "r")
@@ -128,8 +120,8 @@ bilevel_costs = Dict()
 
 
 # trim with specified time steps
-trim_steps = 100
-is_trimming = true # too much for plots otherwise
+trim_steps = 200
+is_trimming = false # too much for plots otherwise
 #gnep_costs_tr = trim_by_steps(gnep_costs, gnep_steps; min_steps=trim_steps)
 #bilevel_costs_tr = trim_by_steps(bilevel_costs, bilevel_steps; min_steps=trim_steps)
 
@@ -187,10 +179,10 @@ end
 #Plots.plot!(b_cost_breakdown.running.lane)
 
 # find common runs
-common_runs = intersect(keys(gnep_costs), keys(bilevel_costs))
+#common_runs = intersect(keys(gnep_costs), keys(bilevel_costs))
 #gnep_costs_com = Dict(i => gnep_costs_tr[i] for i in common_runs)
 #bilevel_costs_com = Dict(i => bilevel_costs_tr[i] for i in common_runs)
-plot_x0s(Dict(i => x0s[i] for i in common_runs))
+#plot_x0s(Dict(i => x0s[i] for i in common_runs))
 
 #collect(x0s[common_runs])
 

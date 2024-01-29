@@ -237,7 +237,6 @@ function setup(; T=10,
     OP2 = OptimizationProblem(12 * T + 8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
 
     sp_a = EPEC.create_epec((1, 0), OP1)
-    sp_b = EPEC.create_epec((1, 0), OP2)
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
 
@@ -261,7 +260,7 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
-    problems = (; sp_a, sp_b, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, α3, β, box_length, box_width, min_long_vel))
+    problems = (; sp_a, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, α3, β, box_length, box_width, min_long_vel))
 end
 
 function attempt_solve(prob, init)
@@ -309,7 +308,6 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
     bilevel_success = false
     gnep_success = false
     sp_success = false
-    preference_id = 0
 
     θ_bilevel = []
     θ_gnep = []
@@ -421,9 +419,9 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # swapping b for a:
         sp_b_init = zeros(probs.gnep.top_level.n)
-        sp_b_init[probs.sp_b.x_inds] = [Xb; Ub]
-        sp_b_init[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+6*T] = [Xa; Ua]
-        sp_b_init[probs.sp_b.top_level.n+6*T+1:probs.sp_b.top_level.n+6*T+8] = [x0[5:8]; x0[1:4]]
+        sp_b_init[probs.sp_a.x_inds] = [Xb; Ub]
+        sp_b_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+6*T] = [Xa; Ua]
+        sp_b_init[probs.sp_a.top_level.n+6*T+1:probs.sp_a.top_level.n+6*T+8] = [x0[5:8]; x0[1:4]]
         #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
 
         #@info "(7b) sp_b..."
@@ -432,12 +430,19 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         # if it fails:
         #show_me([safehouse.w[1:60]; safehouse.θ_out[probs.sp_b.x_inds]], [safehouse.w[65:68]; safehouse.w[61:64]]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)    
 
-        sp_success = θ_sp_a_success && θ_sp_b_success
+        sp_success = θ_sp_a_success # assume ego is P1
 
         if sp_success
             #@info "sp success 7"
             gnep_like = zeros(probs.gnep.top_level.n)
-            gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
+
+            if θ_sp_a_success && θ_sp_b_success
+                gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
+            elseif θ_sp_a_success
+                gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; Xb; Ub]
+            elseif θ_sp_b_success
+                gnep_like[probs.gnep.x_inds] = [Xa; Ua; θ_sp_b[probs.sp_a.x_inds]]
+            end
             gnep_like = [gnep_like; x0]
             valid_Z[7] = probs.extract_gnep(gnep_like)
 
@@ -503,9 +508,9 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
     lowest_preference, Z = sorted_Z[1] # best pair
 
     if lowest_preference < 8
-        print("Success $lowest_preference\n")
+        print("Success $lowest_preference ")
     else
-        print("Fail $lowest_preference\n")
+        print("Fail $lowest_preference ")
     end
 
 
@@ -514,13 +519,22 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
     U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
 
-    gd = col(Z.Xa, Z.Xb, probs.params.r)
-    h = responsibility(Z.Xa, Z.Xb)
-    gd_both = [gd - l.(h) gd - l.(-h) gd]
-    (; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z)
+    #gd = col(Z.Xa, Z.Xb, probs.params.r)
+    #h = responsibility(Z.Xa, Z.Xb)
+    #gd_both = [gd - l.(h) gd - l.(-h) gd]
+    (; P1, P2, U1, U2, lowest_preference, sorted_Z)
 end
 
-function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want_gnep=false, only_want_sp=false)
+
+# Solve mode:
+#						P1:						
+#				SP  NE   P1-leader  P1-follower
+#			 SP 1              
+# P2:		 NE 2   3
+#	  P2-Leader 4   5   6 
+#   P2-Follower 7   8   9		    10
+#
+function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], mode=1)
     lat_max = probs.params.lat_max
     status = "ok"
     x0a = x0[1:4]
@@ -531,7 +545,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         #@info "Sim timestep $t:"
         print("Sim timestep $t: ")
         # check initial condition feasibility
-        is_x0_infeasible = false 
+        is_x0_infeasible = false
 
         if col(x0a, x0b, probs.params.r)[1] <= 0 - 1e-4
             status = "Infeasible initial condition: Collision"
@@ -546,28 +560,114 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
 
         if is_x0_infeasible
             # currently status isn't saved
-            print(status);
+            print(status)
             print("\n")
             break
         end
 
-        r = solve_seq_adaptive(probs, x0; only_want_gnep=only_want_gnep, only_want_sp=only_want_sp)
+        # replace P1 and P2
+        x0_swapped = copy(x0)
+        x0_swapped[1:4] = x0[5:8]
+        x0_swapped[5:8] = x0[1:4]
 
-        #costs = [OP.f(z) for OP in probs.gnep.OPs]
-        lowest_preference, Z = r.sorted_Z[1]
-        z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]
-        feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]
-        feasible = all(all(feasible_arr[i][1]) for i in 1:2) # I think this is fine
-
-
-        if !feasible || any(r.P1[:, 4] .< probs.params.min_long_vel - 1e-4) || any(r.P2[:, 4] .< probs.params.min_long_vel - 1e-4) || any(r.P1[:, 1] .< -lat_max - 1e-4) || any(r.P2[:, 1] .< -lat_max - 1e-4) || any(r.P1[:, 1] .> 1e-4 + lat_max) || any(r.P2[:, 1] .> lat_max + 1e-4)
-            if (feasible)
-                # this must never trigger
-                @infiltrate
-            end
-            status = "Invalid solution"
-            @info "Invalid solution"
+        if mode == 1 # P1 SP, P2 SP
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=true)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = b_res.P1
+            r_U2 = b_res.U1
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+        elseif mode == 3 # P1 NE, P2 NE
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = a_res.P2
+            r_U2 = a_res.U2
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=a_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=a_res.sorted_Z)
+        elseif mode == 9 # P1 Leader, P2 Follower
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = a_res.P2
+            r_U2 = a_res.U2
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=a_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=a_res.sorted_Z)
+        elseif mode == 2 # P1 SP, P2 NE
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = b_res.P2
+            r_U2 = b_res.U2
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+        elseif mode == 4 # P1 SP, P2 Leader
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = b_res.P1
+            r_U2 = b_res.U1
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r
+        elseif mode == 5 # P1 NE, P2 Leader
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = b_res.P1
+            r_U2 = b_res.U1
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+        elseif mode == 6 # P1 Leader, P2 Leader
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = b_res.P1
+            r_U2 = b_res.U1
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+        elseif mode == 7 # P1 SP, P2 Follower
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = b_res.P2
+            r_U2 = b_res.U2
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+        elseif mode == 8 # P1 NE, P2 Follower 
+            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            r_P1 = a_res.P1
+            r_U1 = a_res.U1
+            r_P2 = b_res.P2
+            r_U2 = b_res.U2
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+        elseif mode == 10 # P1 Follower, P2 Follower 
+            a_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            r_P1 = a_res.P2
+            r_U1 = a_res.U2
+            r_P2 = b_res.P2
+            r_U2 = b_res.U2
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
         end
+
+        print("\n")
+
+        ##costs = [OP.f(z) for OP in probs.gnep.OPs]
+        #lowest_preference, Z = r.sorted_Z[1]
+        #z = [Z.Xa; Z.Ua; Z.Xb; Z.Ub; x0]
+        #feasible_arr = [[OP.l .- 1e-4 .<= OP.g(z) .<= OP.u .+ 1e-4] for OP in probs.gnep.OPs]
+        #feasible = all(all(feasible_arr[i][1]) for i in 1:2) # I think this is fine
+
+        #if !feasible || any(r.P1[:, 4] .< probs.params.min_long_vel - 1e-4) || any(r.P2[:, 4] .< probs.params.min_long_vel - 1e-4) || any(r.P1[:, 1] .< -lat_max - 1e-4) || any(r.P2[:, 1] .< -lat_max - 1e-4) || any(r.P1[:, 1] .> 1e-4 + lat_max) || any(r.P2[:, 1] .> lat_max + 1e-4)
+        #    if (feasible)
+        #        # this must never trigger
+        #        @infiltrate
+        #    end
+        #    status = "Invalid solution"
+        #    @info "Invalid solution"
+        #end
+
         # clamp controls and check feasibility
         xa = r.P1[1, :]
         xb = r.P2[1, :]
@@ -596,7 +696,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], only_want
         x0a = pointmass(xa, ua, probs.params.Δt, probs.params.cd)
         x0b = pointmass(xb, ub, probs.params.Δt, probs.params.cd)
 
-        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.gd_both, r.h, r.lowest_preference, r.sorted_Z, status)
+        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.a_pref, r.b_pref)
         x0 = [x0a; x0b]
     end
     results
