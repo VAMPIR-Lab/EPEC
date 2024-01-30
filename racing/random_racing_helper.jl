@@ -75,7 +75,7 @@ function f1_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
         lane_cost_arr[t] = α1 * xa[1]^2
         control_cost_arr[t] = α2 * ua' * ua
         velocity_cost_arr[t] = -α3 * xa[4]
-        terminal_cost_arr[t] = β * xb[2]
+        terminal_cost_arr[t] = β * xb[4]
     end
 
     lane_cost = sum(lane_cost_arr)
@@ -108,7 +108,7 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
         lane_cost_arr[t] = α1 * xb[1]^2
         control_cost_arr[t] = α2 * ub' * ub
         velocity_cost_arr[t] = -α3 * xb[4]
-        terminal_cost_arr[t] = β * xa[2]
+        terminal_cost_arr[t] = β * xa[4]
     end
     lane_cost = sum(lane_cost_arr)
     control_cost = sum(control_cost_arr)
@@ -222,7 +222,7 @@ function compute_Δcost(baseline_cost, other_cost)
 end
 
 function print_mean_min_max(vals; title="", scale=1.0)
-    println("		mean			stderr			min			max")
+    #println("		mean			CI			min			max")
 	vals = vals.*scale
     println("$(title)	$(mean(vals))	$(std(vals)/sqrt(length(vals))*1.96)	$(minimum(vals))	$(maximum(vals))")
 end
@@ -293,16 +293,16 @@ function plot_x0s(data_dict; lat=2.0, ymax=3.0, rad=0.5)
         circ_x_shifted_A = circ_x .+ x
         circ_y_shifted_A = circ_y .+ y
         Plots.plot!(circ_x_shifted_A, circ_y_shifted_A, line=:path, color=:blue, label="")
-        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:blue, label="")
+        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:blue, label="", linewidth=.1)
 
         x, y, u, v = values[5:8]
         circ_x_shifted_B = circ_x .+ x
         circ_y_shifted_B = circ_y .+ y
         Plots.plot!(circ_x_shifted_B, circ_y_shifted_B, line=:path, color=:red, label="")
-        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:red, label="")
+        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:red, label="", linewidth=.1)
         Plots.plot!([-lat, -lat], [-ymax, ymax], color=:black, label="")
         Plots.plot!([+lat, +lat], [-ymax, ymax], color=:black, label="")
         push!(plots, p)
     end
-    Plots.plot(plots...)
+    Plots.plot(plots..., margin=1e-3*Plots.mm)
 end

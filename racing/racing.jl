@@ -19,7 +19,7 @@ function f1(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
         @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
         @inbounds ua = @view(Ua[udim*(t-1)+1:udim*t])
-        cost += α1 * xa[1]^2 + α2 * ua' * ua - α3 * xa[4] + β * xb[2]
+        cost += α1 * xa[1]^2 + α2 * ua' * ua - α3 * xa[4] + β * xb[4]
     end
     cost
 end
@@ -38,7 +38,7 @@ function f2(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
         @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
         @inbounds ub = @view(Ub[udim*(t-1)+1:udim*t])
-        cost += α1 * xb[1]^2 + α2 * ub' * ub - α3 * xb[4] + β * xa[2]
+        cost += α1 * xb[1]^2 + α2 * ub' * ub - α3 * xb[4] + β * xa[4]
     end
     cost
 end
@@ -132,7 +132,8 @@ function g1(Z,
     u_max_nominal=2.0,
     u_max_drafting=5.0,
     box_length=3.0,
-    box_width=1.0)
+    box_width=1.0,
+    col_buffer=r/5)
     T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
@@ -156,7 +157,7 @@ function g1(Z,
     long_vel = @view(Xa[4:4:end])
 
     [g_dyn
-        g_col - l.(h_col)
+        g_col - l.(h_col) .- col_buffer
         lat_accel
         long_accel - u_max_1
         long_accel - u_max_2
@@ -174,7 +175,8 @@ function g2(Z,
     u_max_nominal=2.0,
     u_max_drafting=5.0,
     box_length=3.0,
-    box_width=1.0)
+    box_width=1.0,
+    col_buffer=r/5)
     T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
     @inbounds Xa = @view(Z[1:4*T])
     @inbounds Ua = @view(Z[4*T+1:6*T])
@@ -198,7 +200,7 @@ function g2(Z,
     long_vel = @view(Xb[4:4:end])
 
     [g_dyn
-        g_col - l.(h_col)
+        g_col - l.(h_col) .- col_buffer
         lat_accel
         long_accel - u_max_1
         long_accel - u_max_2
