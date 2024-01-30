@@ -1,24 +1,24 @@
-#using EPEC
-#using GLMakie
-#using JLD2
+using EPEC
+using GLMakie
+using JLD2
 using Plots
 
-#include("racing.jl")
+include("racing.jl")
 include("random_racing_helper.jl")
 
-#probs = setup(; T=10,
-#    Δt=0.1,
-#    r=1.0,
-#    α1=1e-2,
-#    α2=1e-4,
-#    α3=1e-2,
-#    β=1e-2, #.5, # sensitive to high values
-#    cd=0.2, #0.25,
-#    u_max_nominal=1.0,
-#    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
-#    box_length=5.0,
-#    box_width=2.0,
-#    lat_max=1.5);
+probs = setup(; T=10,
+    Δt=0.1,
+    r=1.0,
+    α1=1e-2,
+    α2=1e-4,
+    α3=1e-2,
+    β=1e-2, #.5, # sensitive to high values
+    cd=0.2, #0.25,
+    u_max_nominal=1.0,
+    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
+    box_length=5.0,
+    box_width=2.0,
+    lat_max=1.5);
 
 data_dir = "data"
 x0s_filename = "x0s_100samples_2024-01-29_1537"
@@ -57,32 +57,75 @@ end
 indices = results[1].costs |> keys |> collect |> sort
 b_steps_basis = mean([results[1].steps[i] for i in indices])
 b_total_costs_basis = mean([results[1].costs[i].b.final.total for i in indices])
-
 modes_sorted = sort(collect(keys(results)))
 
-for mode in modes_sorted
-	res = results[mode]
-	inds = res.costs |> keys |> collect |> sort
-	b_steps = [res.steps[i] for i in inds]
-	b_total_costs = [res.costs[i].b.final.total for i in inds]
-	print_mean_min_max(b_total_costs; title="mode $(mode) b costs")
+println("		mean (±95% CI)		std	min		max")
+function print_mean_etc(vals; title="", header_only=false)
+	CI = 1.96*std(vals)/sqrt(length(vals));
+	m = mean(vals);
+	m95l = m - CI;
+	m95u = m + CI; 
+	s = std(vals)
+
+	println("$(title)	$(round(m; sigdigits=5)) (±$(round(CI; sigdigits=5)))	$(round(s; sigdigits=5))	$(round(minimum(vals); sigdigits=5))	$(round(maximum(vals); sigdigits=5))")
 end
 
 for mode in modes_sorted
 	res = results[mode]
 	inds = res.costs |> keys |> collect |> sort
-	a_steps = [res.steps[i] for i in inds]
+	steps = [res.steps[i] for i in inds]
+	print_mean_etc(steps; title="mode $(mode) steps")
+end
+
+for mode in modes_sorted
+	res = results[mode]
+	inds = res.costs |> keys |> collect |> sort
+	b_steps = [res.steps[i] for i in inds]
 	a_total_costs = [res.costs[i].a.final.total for i in inds]
-	print_mean_min_max(a_total_costs; title="mode $(mode) a costs")
+	b_total_costs = [res.costs[i].b.final.total for i in inds]
+	print_mean_etc(a_total_costs; title="mode $(mode) a total")
+	print_mean_etc(b_total_costs; title="mode $(mode) b total")
 end
 
+#for mode in modes_sorted
+#	res = results[mode]
+#	inds = res.costs |> keys |> collect |> sort
+#	b_steps = [res.steps[i] for i in inds]
+#	a_total_costs = [res.costs[i].a.final.lane for i in inds]
+#	b_total_costs = [res.costs[i].b.final.lane for i in inds]
+#	print_mean_etc(a_total_costs; title="mode $(mode) a lane")
+#	print_mean_etc(b_total_costs; title="mode $(mode) b lane")
+#end
 
-for mode in modes_sorted
-	res = results[mode]
-	inds = res.costs |> keys |> collect |> sort
-	b_steps = [res.steps[i] for i in inds]
-	print_mean_min_max(b_steps; title="mode $(mode) steps")
-end
+#for mode in modes_sorted
+#	res = results[mode]
+#	inds = res.costs |> keys |> collect |> sort
+#	b_steps = [res.steps[i] for i in inds]
+#	a_total_costs = [res.costs[i].a.final.control for i in inds]
+#	b_total_costs = [res.costs[i].b.final.control for i in inds]
+#	print_mean_etc(a_total_costs; title="mode $(mode) a contr")
+#	print_mean_etc(b_total_costs; title="mode $(mode) b contr")
+#end
+
+#for mode in modes_sorted
+#	res = results[mode]
+#	inds = res.costs |> keys |> collect |> sort
+#	b_steps = [res.steps[i] for i in inds]
+#	a_total_costs = [res.costs[i].a.final.velocity for i in inds]
+#	b_total_costs = [res.costs[i].b.final.velocity for i in inds]
+#	print_mean_etc(a_total_costs; title="mode $(mode) a vel")
+#	print_mean_etc(b_total_costs; title="mode $(mode) b vel")
+#end
+
+#for mode in modes_sorted
+#	res = results[mode]
+#	inds = res.costs |> keys |> collect |> sort
+#	b_steps = [res.steps[i] for i in inds]
+#	a_total_costs = [res.costs[i].a.final.terminal for i in inds]
+#	b_total_costs = [res.costs[i].b.final.terminal for i in inds]
+#	print_mean_etc(a_total_costs; title="mode $(mode) a term")
+#	print_mean_etc(b_total_costs; title="mode $(mode) b term")
+#end
 
 
 #plot_x0s(x0s)

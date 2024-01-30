@@ -78,6 +78,6 @@ function solve_for_x0s(x0s, mode)
     jldsave("$(data_dir)/results_mode$(mode)_($(init_filename))_$(date_now)_$(time_steps)steps.jld2"; params=probs.params, results, elapsed)
 end
 
-for mode in 1:10
+for mode in 1:5
 	solve_for_x0s(x0s, mode)
 end
