@@ -21,12 +21,12 @@ probs = setup(; T=10,
     lat_max=1.5);
 
 data_dir = "data"
-x0s_filename = "x0s_100samples_2024-01-29_1537"
-results_suffix = "_x0s_100samples_2024-01-29_1537_2024-01-29_1539_100steps.jld2";
+x0s_filename = "x0s_50samples_2024-01-30_1646"
+results_suffix = "_(x0s_50samples_2024-01-30_1646)_2024-01-30_1646_50steps";
 init_file = jldopen("$(data_dir)/$(x0s_filename).jld2", "r")
 x0s = init_file["x0s"]
 
-function process(results; is_trimming=true, trim_steps=100)
+function process(results; is_trimming=false, trim_steps=50)
 	costs = Dict()
 	steps = Dict()
 
@@ -36,8 +36,8 @@ function process(results; is_trimming=true, trim_steps=100)
 	
 		if is_trimming
 			if len >= trim_steps
-				costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:trim_steps))
-				#costs[index] = compute_realized_cost(res)
+				#costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:trim_steps))
+				costs[index] = compute_realized_cost(res)
 			end
 		else
 			costs[index] = compute_realized_cost(res)
@@ -50,7 +50,7 @@ modes = 1:10
 results = Dict()
 
 for i in modes
-	file = jldopen("$(data_dir)/results_mode$(i)$(results_suffix)", "r")
+	file = jldopen("$(data_dir)/results_mode$(i)$(results_suffix).jld2", "r")
 	results[i] = process(file["results"])
 end
 
@@ -59,72 +59,99 @@ b_steps_basis = mean([results[1].steps[i] for i in indices])
 b_total_costs_basis = mean([results[1].costs[i].b.final.total for i in indices])
 modes_sorted = sort(collect(keys(results)))
 
-println("		mean (±95% CI)		std	min		max")
-function print_mean_etc(vals; title="", header_only=false)
-	CI = 1.96*std(vals)/sqrt(length(vals));
-	m = mean(vals);
-	m95l = m - CI;
-	m95u = m + CI; 
-	s = std(vals)
-
-	println("$(title)	$(round(m; sigdigits=5)) (±$(round(CI; sigdigits=5)))	$(round(s; sigdigits=5))	$(round(minimum(vals); sigdigits=5))	$(round(maximum(vals); sigdigits=5))")
-end
-
+@info "steps mean CI min max"
 for mode in modes_sorted
 	res = results[mode]
 	inds = res.costs |> keys |> collect |> sort
-	steps = [res.steps[i] for i in inds]
-	print_mean_etc(steps; title="mode $(mode) steps")
+	b_steps = [res.steps[i] for i in inds]
+	print_mean_min_max(b_steps; title="mode $(mode) steps")
 end
+
+@info "total cost mean CI min max"
+
+cost_table_old = Dict()
+
 
 for mode in modes_sorted
 	res = results[mode]
 	inds = res.costs |> keys |> collect |> sort
 	b_steps = [res.steps[i] for i in inds]
-	a_total_costs = [res.costs[i].a.final.total for i in inds]
 	b_total_costs = [res.costs[i].b.final.total for i in inds]
-	print_mean_etc(a_total_costs; title="mode $(mode) a total")
-	print_mean_etc(b_total_costs; title="mode $(mode) b total")
+	a_steps = [res.steps[i] for i in inds]
+	a_total_costs = [res.costs[i].a.final.total for i in inds]
+	cost_table_old[mode, "a"] = a_total_costs ./ a_steps;
+	cost_table_old[mode, "b"] = b_total_costs ./ b_steps;
+	#print_mean_min_max(a_total_costs ./ a_steps; title="mode $(mode) a",scale=100)
+	#print_mean_min_max(b_total_costs ./ b_steps; title="mode $(mode) b",scale=100)
 end
 
-#for mode in modes_sorted
-#	res = results[mode]
-#	inds = res.costs |> keys |> collect |> sort
-#	b_steps = [res.steps[i] for i in inds]
-#	a_total_costs = [res.costs[i].a.final.lane for i in inds]
-#	b_total_costs = [res.costs[i].b.final.lane for i in inds]
-#	print_mean_etc(a_total_costs; title="mode $(mode) a lane")
-#	print_mean_etc(b_total_costs; title="mode $(mode) b lane")
-#end
 
-#for mode in modes_sorted
-#	res = results[mode]
-#	inds = res.costs |> keys |> collect |> sort
-#	b_steps = [res.steps[i] for i in inds]
-#	a_total_costs = [res.costs[i].a.final.control for i in inds]
-#	b_total_costs = [res.costs[i].b.final.control for i in inds]
-#	print_mean_etc(a_total_costs; title="mode $(mode) a contr")
-#	print_mean_etc(b_total_costs; title="mode $(mode) b contr")
-#end
+cost_table = Dict()
+cost_table["S", "S"] = cost_table_old[1, "a"] 
+cost_table["S", "N"] = cost_table_old[2, "a"] 
+cost_table["S", "L"] = cost_table_old[4, "a"] 
+cost_table["S", "F"] = cost_table_old[7, "a"] 
+cost_table["N", "S"] = cost_table_old[2, "b"] 
+cost_table["N", "N"] = cost_table_old[3, "a"] 
+cost_table["N", "L"] = cost_table_old[5, "a"] 
+cost_table["N", "F"] = cost_table_old[8, "a"] 
+cost_table["L", "S"] = cost_table_old[4, "b"] 
+cost_table["L", "N"] = cost_table_old[5, "b"] 
+cost_table["L", "L"] = cost_table_old[6, "a"] 
+cost_table["L", "F"] = cost_table_old[9, "a"] 
+cost_table["F", "S"] = cost_table_old[7, "b"] 
+cost_table["F", "N"] = cost_table_old[8, "b"] 
+cost_table["F", "L"] = cost_table_old[9, "b"] 
+cost_table["F", "F"] = cost_table_old[10, "a"] 
+#display(cost_table)
 
-#for mode in modes_sorted
-#	res = results[mode]
-#	inds = res.costs |> keys |> collect |> sort
-#	b_steps = [res.steps[i] for i in inds]
-#	a_total_costs = [res.costs[i].a.final.velocity for i in inds]
-#	b_total_costs = [res.costs[i].b.final.velocity for i in inds]
-#	print_mean_etc(a_total_costs; title="mode $(mode) a vel")
-#	print_mean_etc(b_total_costs; title="mode $(mode) b vel")
-#end
+for (k,v) in cost_table
+	print_mean_min_max(v; title=k,scale=100)
+end
 
+cost_table_compressed = Dict()
+for strat in ["S", "N", "L", "F"]
+	cost_table_compressed[strat] = cost_table[strat, "S"] +  cost_table[strat, "N"] + cost_table[strat, "F"] + cost_table[strat, "L"]
+end
+
+for (k,v) in cost_table_compressed
+	print_mean_min_max(v; title=k,scale=100)
+end
+
+#@info "terminal cost mean CI min max"
 #for mode in modes_sorted
 #	res = results[mode]
 #	inds = res.costs |> keys |> collect |> sort
 #	b_steps = [res.steps[i] for i in inds]
-#	a_total_costs = [res.costs[i].a.final.terminal for i in inds]
 #	b_total_costs = [res.costs[i].b.final.terminal for i in inds]
-#	print_mean_etc(a_total_costs; title="mode $(mode) a term")
-#	print_mean_etc(b_total_costs; title="mode $(mode) b term")
+#	a_steps = [res.steps[i] for i in inds]
+#	a_total_costs = [res.costs[i].a.final.terminal for i in inds]
+#	print_mean_min_max(a_total_costs ./ a_steps; title="mode $(mode) a",scale=100)
+#	print_mean_min_max(b_total_costs ./ b_steps; title="mode $(mode) b",scale=100)
+#end
+
+#@info "velocity cost mean CI min max"
+#for mode in modes_sorted
+#	res = results[mode]
+#	inds = res.costs |> keys |> collect |> sort
+#	b_steps = [res.steps[i] for i in inds]
+#	b_total_costs = [res.costs[i].b.final.velocity for i in inds]
+#	a_steps = [res.steps[i] for i in inds]
+#	a_total_costs = [res.costs[i].a.final.velocity for i in inds]
+#	print_mean_min_max(a_total_costs ./ a_steps; title="mode $(mode) a",scale=100)
+#	print_mean_min_max(b_total_costs ./ b_steps; title="mode $(mode) b",scale=100)
+#end
+
+#@info "control cost mean CI min max"
+#for mode in modes_sorted
+#	res = results[mode]
+#	inds = res.costs |> keys |> collect |> sort
+#	b_steps = [res.steps[i] for i in inds]
+#	b_total_costs = [res.costs[i].b.final.control for i in inds]
+#	a_steps = [res.steps[i] for i in inds]
+#	a_total_costs = [res.costs[i].a.final.control for i in inds]
+#	print_mean_min_max(a_total_costs ./ a_steps; title="mode $(mode) a",scale=100)
+#	print_mean_min_max(b_total_costs ./ b_steps; title="mode $(mode) b",scale=100)
 #end
 
 

@@ -22,15 +22,15 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=1.5);
 
-is_x0s_from_file = true;
+is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_5000samples_2024-01-29_1707";
-sample_size = 5000;
-time_steps = 100;
+sample_size = 50;
+time_steps = 50;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
-b_long_vel_delta_max = 1.0 # maximum longitudunal delta velocity for a
+b_long_vel_delta_max = 1.5 # maximum longitudunal delta velocity for a
 lat_max = probs.params.lat_max;
 r_offset_min = probs.params.r;
 date_now = Dates.format(now(),"YYYY-mm-dd_HHMM");
