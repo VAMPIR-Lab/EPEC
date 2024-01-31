@@ -21,8 +21,8 @@ include("random_racing_helper.jl")
 #    lat_max=1.5);
 
 data_dir = "data"
-x0s_filename = "x0s_500samples_2024-01-30_1747"
-results_suffix = "_(x0s_500samples_2024-01-30_1747)_2024-01-30_1747_100steps";
+x0s_filename = "x0s_50samples_2024-01-31_1557"
+results_suffix = "_(x0s_50samples_2024-01-31_1557)_2024-01-31_1557_50steps";
 init_file = jldopen("$(data_dir)/$(x0s_filename).jld2", "r")
 x0s = init_file["x0s"]
 
@@ -60,11 +60,55 @@ end
 
 modes_sorted = sort(collect(keys(results)))
 
+
+function process_comp_cost(results, modes_sorted)
+    cost_table_old = Dict()
+
+    for mode in modes_sorted
+        res = results[mode]
+        inds = res.costs |> keys |> collect |> sort
+		a_steps = [res.steps[i] for i in inds]
+		b_steps = [res.steps[i] for i in inds]
+        a_costs = [res.costs[i].a.final.competitive + res.costs[i].a.final.velocity for i in inds]
+        b_costs = [res.costs[i].b.final.competitive + res.costs[i].b.final.velocity  for i in inds]
+        cost_table_old[mode, "a"] = a_costs ./ a_steps
+        cost_table_old[mode, "b"] = b_costs ./ b_steps
+    end
+
+    full_table = Dict()
+    full_table["S", "S"] = cost_table_old[1, "a"]
+    full_table["S", "N"] = cost_table_old[2, "a"]
+    full_table["S", "L"] = cost_table_old[4, "a"]
+    full_table["S", "F"] = cost_table_old[7, "a"]
+    full_table["N", "S"] = cost_table_old[2, "b"]
+    full_table["N", "N"] = cost_table_old[3, "a"]
+    full_table["N", "L"] = cost_table_old[5, "a"]
+    full_table["N", "F"] = cost_table_old[8, "a"]
+    full_table["L", "S"] = cost_table_old[4, "b"]
+    full_table["L", "N"] = cost_table_old[5, "b"]
+    full_table["L", "L"] = cost_table_old[6, "a"]
+    full_table["L", "F"] = cost_table_old[9, "a"]
+    full_table["F", "S"] = cost_table_old[7, "b"]
+    full_table["F", "N"] = cost_table_old[8, "b"]
+    full_table["F", "L"] = cost_table_old[9, "b"]
+    full_table["F", "F"] = cost_table_old[10, "a"]
+    #display(cost_table)
+
+    compressed_table = Dict()
+    for strat in ["S", "N", "L", "F"]
+        compressed_table[strat] = full_table[strat, "S"] + full_table[strat, "N"] + full_table[strat, "F"] + full_table[strat, "L"]
+    end
+	(;full=full_table, compressed=compressed_table)
+end
+
 total_cost_table = process_costs(results, modes_sorted, property=:total)
 lane_cost_table = process_costs(results, modes_sorted, property=:lane)
 control_cost_table = process_costs(results, modes_sorted, property=:control)
 velocity_cost_table = process_costs(results, modes_sorted, property=:velocity)
 comp_cost_table = process_costs(results, modes_sorted, property=:competitive)
+comp2_cost_table = process_comp_cost(results, modes_sorted)
+
+
 
 println("		mean (±95% CI) [95% CI l, u]	std	min	max")
 
@@ -90,13 +134,18 @@ for (k, v) in control_cost_table.compressed
     print_mean_etc(v; title=k, scale=100)
 end
 
-println("Velocity:")
-for (k, v) in velocity_cost_table.compressed
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Velocity:")
+#for (k, v) in velocity_cost_table.compressed
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
-println("Competitive:")
-for (k, v) in comp_cost_table.compressed
+#println("Competitive:")
+#for (k, v) in comp_cost_table.compressed
+#    print_mean_etc(v; title=k, scale=100)
+#end
+
+println("Combined competitive:")
+for (k, v) in comp2_cost_table.compressed
     print_mean_etc(v; title=k, scale=100)
 end
 
@@ -116,13 +165,18 @@ for (k, v) in control_cost_table.full
     print_mean_etc(v; title=k, scale=100)
 end
 
-println("Velocity:")
-for (k, v) in velocity_cost_table.full
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Velocity:")
+#for (k, v) in velocity_cost_table.full
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
-println("Competitive:")
-for (k, v) in comp_cost_table.full
+#println("Competitive:")
+#for (k, v) in comp_cost_table.full
+#    print_mean_etc(v; title=k, scale=100)
+#end
+
+println("Combined competitive:")
+for (k, v) in comp2_cost_table.full
     print_mean_etc(v; title=k, scale=100)
 end
 

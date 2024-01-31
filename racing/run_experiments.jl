@@ -11,29 +11,31 @@ include("random_racing_helper.jl")
 probs = setup(; T=10,
     Δt=0.1,
     r=1.0,
-    α1=1e-2,
+    α1=1e-3,
     α2=1e-4,
-    α3=1e-2,
-    β=1e-2, #.5, # sensitive to high values
+    α3=1e-1,
+    β=1e-1, #.5, # sensitive to high values
     cd=0.2, #0.25,
     u_max_nominal=1.0,
     u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
     box_length=5.0,
     box_width=2.0,
-    lat_max=1.5);
+    lat_max=2.0);
 
 is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_5000samples_2024-01-29_1707";
-sample_size = 1000;
+sample_size = 500;
 time_steps = 100;
+#sample_size = 50;
+#time_steps = 50;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.5 # maximum longitudunal delta velocity for a
 lat_max = probs.params.lat_max;
 r_offset_min = probs.params.r + probs.params.col_buffer;
-date_now = Dates.format(now(),"YYYY-mm-dd_HHMM");
+date_now = Dates.format(now(), "YYYY-mm-dd_HHMM");
 
 if (is_x0s_from_file)
     # WARNING params not loaded from file
@@ -43,7 +45,7 @@ else
     x0s = generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
     init_filename = "x0s_$(sample_size)samples_$(date_now)"
     jldsave("$(data_dir)/$(init_filename).jld2"; x0s, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
-	x0s
+    x0s
 end
 
 
@@ -79,5 +81,5 @@ function solve_for_x0s(x0s, mode)
 end
 
 for mode in 1:10
-	solve_for_x0s(x0s, mode)
+    solve_for_x0s(x0s, mode)
 end
