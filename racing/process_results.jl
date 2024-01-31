@@ -59,6 +59,17 @@ b_steps_basis = mean([results[1].steps[i] for i in indices])
 b_total_costs_basis = mean([results[1].costs[i].b.final.total for i in indices])
 modes_sorted = sort(collect(keys(results)))
 
+println("		mean (±95% CI)		std	min		max")
+function print_mean_etc(vals; title="", header_only=false)
+	CI = 1.96*std(vals)/sqrt(length(vals));
+	m = mean(vals);
+	m95l = m - CI;
+	m95u = m + CI; 
+	s = std(vals)
+
+	println("$(title)	$(round(m; sigdigits=5)) (±$(round(CI; sigdigits=5)))	$(round(s; sigdigits=5))	$(round(minimum(vals); sigdigits=5))	$(round(maximum(vals); sigdigits=5))")
+end
+
 @info "steps mean CI min max"
 for mode in modes_sorted
 	res = results[mode]
@@ -68,9 +79,7 @@ for mode in modes_sorted
 end
 
 @info "total cost mean CI min max"
-
 cost_table_old = Dict()
-
 
 for mode in modes_sorted
 	res = results[mode]

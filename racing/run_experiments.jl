@@ -26,8 +26,8 @@ is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_5000samples_2024-01-29_1707";
-sample_size = 50;
-time_steps = 50;
+sample_size = 500;
+time_steps = 100;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.5 # maximum longitudunal delta velocity for a
@@ -78,6 +78,6 @@ function solve_for_x0s(x0s, mode)
     jldsave("$(data_dir)/results_mode$(mode)_($(init_filename))_$(date_now)_$(time_steps)steps.jld2"; params=probs.params, results, elapsed)
 end
 
-for mode in 1:5
+for mode in 1:10
 	solve_for_x0s(x0s, mode)
 end
