@@ -32,7 +32,7 @@ r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.5 # maximum longitudunal delta velocity for a
 lat_max = probs.params.lat_max;
-r_offset_min = probs.params.r;
+r_offset_min = probs.params.r + probs.params.col_buffer;
 date_now = Dates.format(now(),"YYYY-mm-dd_HHMM");
 
 if (is_x0s_from_file)
