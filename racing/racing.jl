@@ -432,7 +432,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         # if it fails:
         #show_me([safehouse.w[1:60]; safehouse.θ_out[probs.sp_b.x_inds]], [safehouse.w[65:68]; safehouse.w[61:64]]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)    
 
-        sp_success = θ_sp_a_success && θ_sp_b_success # consider sp success to be bilateral succes (comment out after && to assume ego is P1)
+        sp_success = θ_sp_a_success #&& θ_sp_b_success # consider sp success to be bilateral succes (comment out after && to assume ego is P1)
 
         if sp_success
             #@info "sp success 7"
