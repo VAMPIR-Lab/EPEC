@@ -17,8 +17,8 @@ probs = setup(; T=10,
 	box_width = 2.0,
 	lat_max = 1.5);
 
-x0 = [1., 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
-#x0 = [.5, 0, 0, 2, 0, 1, 0, 1]
+#x0 = [1., 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
+x0 = [.5, 0, 0, 2, 0, 1, 0, 1.5]	
 #x0 = [-1.424048638209471, 0.0, 0.0, 0.9976734384334609, 0.18614584313084448, -0.03629180291779105, 0.0, 1.6355701891654997]
 #x0 = [
 #	1.2311987492087133
@@ -35,7 +35,7 @@ x0 = [1., 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial veloci
 #display(f)
 #update_visual!(ax, XA, XB, x0, P1, P2; T = probs.params.T, lat = lat)
 
-sim_results = solve_simulation(probs, 50; x0, mode=3);
+sim_results = solve_simulation(probs, 50; x0, mode=9);
 
 animate(probs, sim_results; save=false);
 

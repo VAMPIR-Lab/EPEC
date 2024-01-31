@@ -66,7 +66,7 @@ function f1_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     lane_cost_arr = zeros(T)
     control_cost_arr = zeros(T)
     velocity_cost_arr = zeros(T)
-    terminal_cost_arr = zeros(T)
+    comp_cost_arr = zeros(T)
 
     for t in 1:T
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
@@ -75,17 +75,17 @@ function f1_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
         lane_cost_arr[t] = α1 * xa[1]^2
         control_cost_arr[t] = α2 * ua' * ua
         velocity_cost_arr[t] = -α3 * xa[4]
-        terminal_cost_arr[t] = β * xb[4]
+        comp_cost_arr[t] = β * xb[4]
     end
 
     lane_cost = sum(lane_cost_arr)
     control_cost = sum(control_cost_arr)
     velocity_cost = sum(velocity_cost_arr)
-    terminal_cost = sum(terminal_cost_arr)
-    total_cost = lane_cost + control_cost + velocity_cost + terminal_cost
-    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ terminal_cost_arr
-    final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost, terminal=terminal_cost)
-    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, terminal=terminal_cost_arr)
+    comp_cost = sum(comp_cost_arr)
+    total_cost = lane_cost + control_cost + velocity_cost + comp_cost
+    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ comp_cost_arr
+    final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost, competitive=comp_cost)
+    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, competitive=comp_cost_arr)
     (; final, running)
 end
 
@@ -99,7 +99,7 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     lane_cost_arr = zeros(T)
     control_cost_arr = zeros(T)
     velocity_cost_arr = zeros(T)
-    terminal_cost_arr = zeros(T)
+    comp_cost = zeros(T)
 
     for t in 1:T
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
@@ -108,16 +108,16 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
         lane_cost_arr[t] = α1 * xb[1]^2
         control_cost_arr[t] = α2 * ub' * ub
         velocity_cost_arr[t] = -α3 * xb[4]
-        terminal_cost_arr[t] = β * xa[4]
+        comp_cost[t] = β * xa[4]
     end
     lane_cost = sum(lane_cost_arr)
     control_cost = sum(control_cost_arr)
     velocity_cost = sum(velocity_cost_arr)
-    terminal_cost = sum(terminal_cost_arr)
-    total_cost = lane_cost + control_cost + velocity_cost + terminal_cost
-    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ terminal_cost_arr
-    final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost, terminal=terminal_cost)
-    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, terminal=terminal_cost_arr)
+    comp_cost = sum(comp_cost)
+    total_cost = lane_cost + control_cost + velocity_cost + comp_cost
+    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ comp_cost
+    final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost, competitive=comp_cost)
+    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, competitive=comp_cost)
     (; final, running)
 end
 
@@ -164,17 +164,17 @@ function extract_intersected_costs(sp_costs, gnep_costs, bilevel_costs)
     sp_lane_cost_arr = []
     sp_control_cost_arr = []
     sp_velocity_cost_arr = []
-    sp_terminal_cost_arr = []
+    sp_comp_cost_arr = []
     gnep_cost_arr = []
     gnep_lane_cost_arr = []
     gnep_control_cost_arr = []
     gnep_velocity_cost_arr = []
-    gnep_terminal_cost_arr = []
+    gnep_comp_cost_arr = []
     bilevel_cost_arr = []
     bilevel_lane_cost_arr = []
     bilevel_control_cost_arr = []
     bilevel_velocity_cost_arr = []
-    bilevel_terminal_cost_arr = []
+    bilevel_comp_cost_arr = []
 
     for (index, sp_cost) in sp_costs
         if haskey(gnep_costs, index) && haskey(bilevel_costs, index)
@@ -184,23 +184,23 @@ function extract_intersected_costs(sp_costs, gnep_costs, bilevel_costs)
                 push!(sp_lane_cost_arr, [sp_cost.a.final.lane, sp_cost.b.final.lane])
                 push!(sp_control_cost_arr, [sp_cost.a.final.control, sp_cost.b.final.control])
                 push!(sp_velocity_cost_arr, [sp_cost.a.final.velocity, sp_cost.b.final.velocity])
-                push!(sp_terminal_cost_arr, [sp_cost.a.final.terminal, sp_cost.b.final.terminal])
+                push!(sp_comp_cost_arr, [sp_cost.a.final.competitive, sp_cost.b.final.competitive])
                 push!(gnep_cost_arr, [gnep_costs[index].a.final.total, gnep_costs[index].b.final.total])
                 push!(gnep_lane_cost_arr, [gnep_costs[index].a.final.lane, gnep_costs[index].b.final.lane])
                 push!(gnep_control_cost_arr, [gnep_costs[index].a.final.control, gnep_costs[index].b.final.control])
                 push!(gnep_velocity_cost_arr, [gnep_costs[index].a.final.velocity, gnep_costs[index].b.final.velocity])
-                push!(gnep_terminal_cost_arr, [gnep_costs[index].a.final.terminal, gnep_costs[index].b.final.terminal])
+                push!(gnep_comp_cost_arr, [gnep_costs[index].a.final.competitive, gnep_costs[index].b.final.competitive])
                 push!(bilevel_cost_arr, [bilevel_costs[index].a.final.total, bilevel_costs[index].b.final.total])
                 push!(bilevel_lane_cost_arr, [bilevel_costs[index].a.final.lane, bilevel_costs[index].b.final.lane])
                 push!(bilevel_control_cost_arr, [bilevel_costs[index].a.final.control, bilevel_costs[index].b.final.control])
                 push!(bilevel_velocity_cost_arr, [bilevel_costs[index].a.final.velocity, bilevel_costs[index].b.final.velocity])
-                push!(bilevel_terminal_cost_arr, [bilevel_costs[index].a.final.terminal, bilevel_costs[index].b.final.terminal])
+                push!(bilevel_comp_cost_arr, [bilevel_costs[index].a.final.competitive, bilevel_costs[index].b.final.competitive])
             end
         end
     end
-    sp_extracted = (total=sp_cost_arr, lane=sp_lane_cost_arr, control=sp_control_cost_arr, velocity=sp_velocity_cost_arr, terminal=sp_terminal_cost_arr)
-    gnep_extracted = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, velocity=gnep_velocity_cost_arr, terminal=gnep_terminal_cost_arr)
-    bilevel_extracted = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, velocity=bilevel_velocity_cost_arr, terminal=bilevel_terminal_cost_arr)
+    sp_extracted = (total=sp_cost_arr, lane=sp_lane_cost_arr, control=sp_control_cost_arr, velocity=sp_velocity_cost_arr, comp=spcomp_cost_arr)
+    gnep_extracted = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, velocity=gnep_velocity_cost_arr, comp=gnep_comp_cost_arr)
+    bilevel_extracted = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, velocity=bilevel_velocity_cost_arr, comp=bilevel_comp_cost_arr)
     cost = (ind=index_arr, sp=sp_extracted, gnep=gnep_extracted, bilevel=bilevel_extracted)
     cost
 end
@@ -221,10 +221,56 @@ function compute_Δcost(baseline_cost, other_cost)
     Δcost
 end
 
-function print_mean_min_max(vals; title="", scale=1.0)
-    #println("		mean			CI			min			max")
-	vals = vals.*scale
-    println("$(title)	$(mean(vals))	$(std(vals)/sqrt(length(vals))*1.96)	$(minimum(vals))	$(maximum(vals))")
+function process_costs(results, modes_sorted; property=:total)
+    cost_table_old = Dict()
+
+    for mode in modes_sorted
+        res = results[mode]
+        inds = res.costs |> keys |> collect |> sort
+		a_steps = [res.steps[i] for i in inds]
+		b_steps = [res.steps[i] for i in inds]
+        a_costs = [getindex(res.costs[i].a.final, property) for i in inds]
+        b_costs = [getindex(res.costs[i].b.final, property)  for i in inds]
+        cost_table_old[mode, "a"] = a_costs ./ a_steps
+        cost_table_old[mode, "b"] = b_costs ./ b_steps
+    end
+
+    full_table = Dict()
+    full_table["S", "S"] = cost_table_old[1, "a"]
+    full_table["S", "N"] = cost_table_old[2, "a"]
+    full_table["S", "L"] = cost_table_old[4, "a"]
+    full_table["S", "F"] = cost_table_old[7, "a"]
+    full_table["N", "S"] = cost_table_old[2, "b"]
+    full_table["N", "N"] = cost_table_old[3, "a"]
+    full_table["N", "L"] = cost_table_old[5, "a"]
+    full_table["N", "F"] = cost_table_old[8, "a"]
+    full_table["L", "S"] = cost_table_old[4, "b"]
+    full_table["L", "N"] = cost_table_old[5, "b"]
+    full_table["L", "L"] = cost_table_old[6, "a"]
+    full_table["L", "F"] = cost_table_old[9, "a"]
+    full_table["F", "S"] = cost_table_old[7, "b"]
+    full_table["F", "N"] = cost_table_old[8, "b"]
+    full_table["F", "L"] = cost_table_old[9, "b"]
+    full_table["F", "F"] = cost_table_old[10, "a"]
+    #display(cost_table)
+
+    compressed_table = Dict()
+    for strat in ["S", "N", "L", "F"]
+        compressed_table[strat] = full_table[strat, "S"] + full_table[strat, "N"] + full_table[strat, "F"] + full_table[strat, "L"]
+    end
+	(;full=full_table, compressed=compressed_table)
+end
+
+
+function print_mean_etc(vals; title="", scale=1.0, sigdigits = 4)
+    vals = vals.*scale
+	CI = 1.96*std(vals)/sqrt(length(vals));
+	m = mean(vals);
+	m95l = m - CI;
+	m95u = m + CI; 
+	s = std(vals)
+
+	println("$(title)	$(round(m; sigdigits)) (±$(round(CI; sigdigits))) [$(round(m95l; sigdigits)), $(round(m95u; sigdigits))]	$(round(s; sigdigits))	$(round(minimum(vals); sigdigits))	$(round(maximum(vals); sigdigits))")
 end
 
 function print_mean_min_max(Δcost)
