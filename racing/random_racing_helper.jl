@@ -34,7 +34,7 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
 
 
     a_long_vel_min = b_long_vel_delta_max
-    a_vel0_arr  = hcat(zeros(sample_size), a_long_vel_min .+ (a_long_vel_max - a_long_vel_min) .* rand(MersenneTwister()))
+    a_vel0_arr  = hcat(zeros(sample_size), a_long_vel_min .+ (a_long_vel_max - a_long_vel_min) .* rand(MersenneTwister(), sample_size))
     #a_vel0_arr = hcat(zeros(sample_size), a_long_vel_max .* rand(MersenneTwister(), sample_size))
 
     b_vel0_arr = zeros(size(a_vel0_arr))
