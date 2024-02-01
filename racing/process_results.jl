@@ -55,6 +55,56 @@ for i in modes
     results[i] = process(file["results"])
 end
 
+pa_comp = Plots.plot()
+#pb_comp = Plots.plot()
+#@infiltrate
+
+vals = [ Float64[] for _ in 1:100]
+for (index, c) in results[3].costs
+    T = length(c.a.running.competitive)
+    for t in 1:T
+        push!(vals[t], c.a.running.competitive[t] + c.a.running.velocity[t])
+        # CI = 1.96*std(vals)/sqrt(length(vals));
+    end
+end
+avgs = map(vals) do val
+    mean(val)
+end
+stderrs = map(vals) do val
+    1.96*std(val) / sqrt(length(val))
+end
+
+Plots.plot(avgs, color=:blue, linewidth=5)
+Plots.plot!(avgs .+ stderrs, color=:blue, linewidth=2)
+Plots.plot!(avgs .- stderrs, color=:blue, linewidth=2)
+
+vals2 = [ Float64[] for _ in 1:100]
+for (index, c) in results[9].costs
+    T = length(c.a.running.competitive)
+    for t in 1:T
+        push!(vals2[t], c.a.running.competitive[t] + c.a.running.velocity[t])
+        # CI = 1.96*std(vals)/sqrt(length(vals));
+    end
+end
+avgs2 = map(vals2) do val
+    mean(val)
+end
+stderrs2 = map(vals2) do val
+    1.96*std(val) / sqrt(length(val))
+end
+
+
+Plots.plot!(avgs2, color=:red, linewidth=5)
+Plots.plot!(avgs2 .+ stderrs2, color=:red, linewidth=2)
+Plots.plot!(avgs2 .- stderrs2, color=:red, linewidth=2)
+
+
+#for (index, c) in results[3].costs
+#    #@infiltrate
+#    Plots.plot!(pa_comp, mean.(c.a.running.competitive + c.a.running.velocity), title="a competitive", label="")
+#    Plots.plot!(pa_comp, mean.(c.b.running.competitive + c.b.running.velocity), title="b competitive", label="")
+#end
+#Plots.plot(pa_comp)
 #indices = results[1].costs |> keys |> collect |> sort
 #b_steps_basis = mean([results[1].steps[i] for i in indices])
 #b_total_costs_basis = mean([results[1].costs[i].b.final.total for i in indices])

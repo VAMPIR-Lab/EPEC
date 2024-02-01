@@ -25,9 +25,9 @@ probs = setup(; T=10,
 is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
-init_filename = "x0s_5000samples_2024-01-29_1707";
+init_filename = "x0s_500samples_2024-01-31_1723";
 sample_size = 500;
-time_steps = 100;
+time_steps = 50;
 #sample_size = 50;
 #time_steps = 50;
 r_offset_max = 3.0; # maximum distance between P1 and P2
