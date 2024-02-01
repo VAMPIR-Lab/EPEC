@@ -1,6 +1,6 @@
 #using EPEC
 #using GLMakie
-using JLD2
+#using JLD2
 #using Plots
 
 #include("racing.jl")
@@ -9,24 +9,24 @@ include("random_racing_helper.jl")
 #probs = setup(; T=10,
 #    Δt=0.1,
 #    r=1.0,
-#    α1=1e-2,
+#    α1=1e-3,
 #    α2=1e-4,
-#    α3=1e-2,
-#    β=1e-2, #.5, # sensitive to high values
+#    α3=1e-1,
+#    β=1e-1, #.5, # sensitive to high values
 #    cd=0.2, #0.25,
 #    u_max_nominal=1.0,
 #    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
 #    box_length=5.0,
 #    box_width=2.0,
-#    lat_max=1.5);
+#    lat_max=2.0);
 
 data_dir = "data"
-x0s_filename = "x0s_50samples_2024-01-31_1557"
-results_suffix = "_(x0s_50samples_2024-01-31_1557)_2024-01-31_1557_50steps";
+x0s_filename = "x0s_1500samples_2024-01-31_1720"
+results_suffix = "_(x0s_1500samples_2024-01-31_1720)_2024-01-31_1720_100steps";
 init_file = jldopen("$(data_dir)/$(x0s_filename).jld2", "r")
 x0s = init_file["x0s"]
 
-function process(results; is_trimming=false, trim_steps=50)
+function process(results; is_trimming=false, trim_steps=100)
     costs = Dict()
     steps = Dict()
 
@@ -38,6 +38,7 @@ function process(results; is_trimming=false, trim_steps=50)
             if len >= trim_steps
                 #costs[index] = compute_realized_cost(Dict(i => res[i] for i in 1:trim_steps))
                 costs[index] = compute_realized_cost(res)
+                #steps[index] = len
             end
         else
             costs[index] = compute_realized_cost(res)
@@ -59,6 +60,46 @@ end
 #b_total_costs_basis = mean([results[1].costs[i].b.final.total for i in indices])
 
 modes_sorted = sort(collect(keys(results)))
+
+function process_steps(results, modes_sorted)
+    steps_table_old = Dict()
+
+    for mode in modes_sorted
+        res = results[mode]
+        inds = res.costs |> keys |> collect |> sort
+		a_steps = [res.steps[i] for i in inds]
+		b_steps = [res.steps[i] for i in inds]
+        steps_table_old[mode, "a"] = a_steps
+        steps_table_old[mode, "b"] = b_steps
+    end
+
+    full_steps_table = Dict()
+    full_steps_table["S", "S"] = steps_table_old[1, "a"]
+    full_steps_table["S", "N"] = steps_table_old[2, "a"]
+    full_steps_table["S", "L"] = steps_table_old[4, "a"]
+    full_steps_table["S", "F"] = steps_table_old[7, "a"]
+    full_steps_table["N", "S"] = steps_table_old[2, "b"]
+    full_steps_table["N", "N"] = steps_table_old[3, "a"]
+    full_steps_table["N", "L"] = steps_table_old[5, "a"]
+    full_steps_table["N", "F"] = steps_table_old[8, "a"]
+    full_steps_table["L", "S"] = steps_table_old[4, "b"]
+    full_steps_table["L", "N"] = steps_table_old[5, "b"]
+    full_steps_table["L", "L"] = steps_table_old[6, "a"]
+    full_steps_table["L", "F"] = steps_table_old[9, "a"]
+    full_steps_table["F", "S"] = steps_table_old[7, "b"]
+    full_steps_table["F", "N"] = steps_table_old[8, "b"]
+    full_steps_table["F", "L"] = steps_table_old[9, "b"]
+    full_steps_table["F", "F"] = steps_table_old[10, "a"]
+    #display(cost_table)
+
+    compressed_table = Dict()
+    for strat in ["S", "N", "L", "F"]
+        #@infiltrate
+        compressed_table[strat] = (full_steps_table[strat, "S"] + full_steps_table[strat, "N"] + full_steps_table[strat, "F"] + full_steps_table[strat, "L"])/4
+    end
+	(;full=full_steps_table, compressed=compressed_table)
+end
+
 
 
 function process_comp_cost(results, modes_sorted)
@@ -101,6 +142,7 @@ function process_comp_cost(results, modes_sorted)
 	(;full=full_table, compressed=compressed_table)
 end
 
+steps_table = process_steps(results, modes_sorted)
 total_cost_table = process_costs(results, modes_sorted, property=:total)
 lane_cost_table = process_costs(results, modes_sorted, property=:lane)
 control_cost_table = process_costs(results, modes_sorted, property=:control)
@@ -112,11 +154,9 @@ comp2_cost_table = process_comp_cost(results, modes_sorted)
 
 println("		mean (±95% CI) [95% CI l, u]	std	min	max")
 
-for mode in modes_sorted
-	res = results[mode]
-	inds = res.costs |> keys |> collect |> sort
-	b_steps = [res.steps[i] for i in inds]
-	print_mean_etc(b_steps; title="mode $(mode) steps")
+println("Steps:")
+for (k, v) in steps_table.compressed
+    print_mean_etc(v; title=k, scale=1)
 end
 
 println("Total:")
@@ -147,6 +187,12 @@ end
 println("Combined competitive:")
 for (k, v) in comp2_cost_table.compressed
     print_mean_etc(v; title=k, scale=100)
+end
+
+
+println("Steps:")
+for (k, v) in steps_table.full
+    print_mean_etc(v; title=k, scale=1)
 end
 
 

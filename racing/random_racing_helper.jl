@@ -264,7 +264,7 @@ function process_costs(results, modes_sorted; property=:total)
 end
 
 
-function print_mean_etc(vals; title="", scale=1.0, sigdigits = 4)
+function print_mean_etc(vals; title="", scale=1.0, sigdigits = 12)
     vals = vals.*scale
 	CI = 1.96*std(vals)/sqrt(length(vals));
 	m = mean(vals);
