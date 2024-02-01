@@ -31,17 +31,22 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
     #Plots.scatter!(b_pos0_arr[:, 1], b_pos0_arr[:, 2], aspect_ratio=:equal, legend=false)
 
     # keep lateral velocity zero
-    a_vel0_arr = hcat(zeros(sample_size), a_long_vel_max .* rand(MersenneTwister(), sample_size))
+
+
+    a_long_vel_min = b_long_vel_delta_max
+    a_vel0_arr  = hcat(zeros(sample_size), a_long_vel_min .+ (a_long_vel_max - a_long_vel_min) .* rand(MersenneTwister()))
+    #a_vel0_arr = hcat(zeros(sample_size), a_long_vel_max .* rand(MersenneTwister(), sample_size))
+
     b_vel0_arr = zeros(size(a_vel0_arr))
     # choose random velocity offset for 
     for i in 1:sample_size
         b_long_vel0_offset = -b_long_vel_delta_max + 2 * b_long_vel_delta_max .* rand(MersenneTwister())
         b_long_vel0 = a_vel0_arr[i, 2] + b_long_vel0_offset
-        # reroll until b long vel is nonnegative
-        while b_long_vel0 < 0
-            b_long_vel0_offset = -b_long_vel_delta_max + 2 * b_long_vel_delta_max .* rand(MersenneTwister())
-            b_long_vel0 = a_vel0_arr[i, 2] + b_long_vel0_offset
-        end
+        ## reroll until b long vel is nonnegative
+        #while b_long_vel0 < 0
+        #    b_long_vel0_offset = -b_long_vel_delta_max + 2 * b_long_vel_delta_max .* rand(MersenneTwister())
+        #    b_long_vel0 = a_vel0_arr[i, 2] + b_long_vel0_offset
+        #end
         b_vel0_arr[i, 2] = b_long_vel0
     end
 
@@ -99,7 +104,7 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     lane_cost_arr = zeros(T)
     control_cost_arr = zeros(T)
     velocity_cost_arr = zeros(T)
-    comp_cost = zeros(T)
+    comp_cost_arr = zeros(T)
 
     for t in 1:T
         @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
@@ -108,16 +113,16 @@ function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
         lane_cost_arr[t] = α1 * xb[1]^2
         control_cost_arr[t] = α2 * ub' * ub
         velocity_cost_arr[t] = -α3 * xb[4]
-        comp_cost[t] = β * xa[4]
+        comp_cost_arr[t] = β * xa[4]
     end
     lane_cost = sum(lane_cost_arr)
     control_cost = sum(control_cost_arr)
     velocity_cost = sum(velocity_cost_arr)
-    comp_cost = sum(comp_cost)
+    comp_cost = sum(comp_cost_arr)
     total_cost = lane_cost + control_cost + velocity_cost + comp_cost
-    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ comp_cost
+    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ comp_cost_arr
     final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost, competitive=comp_cost)
-    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, competitive=comp_cost)
+    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, competitive=comp_cost_arr)
     (; final, running)
 end
 
@@ -264,7 +269,7 @@ function process_costs(results, modes_sorted; property=:total)
 end
 
 
-function print_mean_etc(vals; title="", scale=1.0, sigdigits = 12)
+function print_mean_etc(vals; title="", scale=1.0, sigdigits = 3)
     vals = vals.*scale
 	CI = 1.96*std(vals)/sqrt(length(vals));
 	m = mean(vals);
@@ -283,15 +288,15 @@ function print_mean_min_max(Δcost)
     println("P2 Δcost rel%:  $(mean(Δcost.P2_rel) * 100)  $(std(Δcost.P2_rel)/sqrt(length(Δcost.P2_rel)) * 100)  $(minimum(Δcost.P2_rel) * 100)  $(maximum(Δcost.P2_rel) * 100)")
 end
 
-function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alpha=0.2)
+function plot_running_costs(costs; T=100, is_cumulative=false, sup_title="", alpha=0.2)
     pa_lane = Plots.plot()
     pb_lane = Plots.plot()
     pa_control = Plots.plot()
     pb_control = Plots.plot()
     pa_velocity = Plots.plot()
     pb_velocity = Plots.plot()
-    pa_terminal = Plots.plot()
-    pb_terminal = Plots.plot()
+    pa_comp = Plots.plot()
+    pb_comp = Plots.plot()
     pa_total = Plots.plot()
     pb_total = Plots.plot()
 
@@ -305,8 +310,8 @@ function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alph
             Plots.plot!(pb_control, alpha=alpha, cumsum(c.b.running.control[idx]), title="b control", label="")
             Plots.plot!(pa_velocity, alpha=alpha, cumsum(c.a.running.velocity[idx]), title="a velocity", label="")
             Plots.plot!(pb_velocity, alpha=alpha, cumsum(c.b.running.velocity[idx]), title="b velocity", label="")
-            Plots.plot!(pa_terminal, alpha=alpha, cumsum(c.a.running.terminal[idx]), title="a terminal", label="")
-            Plots.plot!(pb_terminal, alpha=alpha, cumsum(c.b.running.terminal[idx]), title="b terminal", label="")
+            Plots.plot!(pa_comp, alpha=alpha, cumsum(c.a.running.competitive[idx]), title="a competitive", label="")
+            Plots.plot!(pb_comp, alpha=alpha, cumsum(c.b.running.competitive[idx]), title="b competitive", label="")
             Plots.plot!(pa_total, alpha=alpha, cumsum(c.a.running.total[idx]), title="a total", label="")
             Plots.plot!(pb_total, alpha=alpha, cumsum(c.b.running.total[idx]), title="b total", label="")
         else
@@ -316,8 +321,8 @@ function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alph
             Plots.plot!(pb_control, alpha=alpha, c.b.running.control[idx], title="b control", label="")
             Plots.plot!(pa_velocity, alpha=alpha, c.a.running.velocity[idx], title="a velocity", label="")
             Plots.plot!(pb_velocity, alpha=alpha, c.b.running.velocity[idx], title="b velocity", label="")
-            Plots.plot!(pa_terminal, alpha=alpha, c.a.running.terminal[idx], title="a terminal", label="")
-            Plots.plot!(pb_terminal, alpha=alpha, c.b.running.terminal[idx], title="b terminal", label="")
+            Plots.plot!(pa_comp, alpha=alpha, mean.(c.a.running.competitive[idx] + c.a.running.velocity[idx]), title="a competitive", label="")
+            Plots.plot!(pb_comp, alpha=alpha, mean.(c.b.running.competitive[idx] + c.b.running.velocity[idx]), title="b competitive", label="")
             Plots.plot!(pa_total, alpha=alpha, c.a.running.total[idx], title="a total", label="")
             Plots.plot!(pb_total, alpha=alpha, c.b.running.total[idx], title="b total", label="")
         end
@@ -327,7 +332,8 @@ function plot_running_costs(costs; T=10, is_cumulative=false, sup_title="", alph
     #Plots.plot!(title)
 
     title = Plots.plot(title="$(sup_title)", grid=false, showaxis=false, bottom_margin=-50Plots.px)
-    Plots.plot(title, pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=@layout([A{0.01h}; (2, 5)]))
+    #Plots.plot(title, pa_lane, pa_control, pa_velocity, pa_comp, pa_total, pb_lane, pb_control, pb_velocity, pb_comp, pb_total, layout=@layout([A{0.01h}; (2, 5)]))
+    Plots.plot(pa_comp, pb_comp, layout=@layout([(1, 2)]))
 end
 
 function plot_x0s(data_dict; lat=2.0, ymax=3.0, rad=0.5)

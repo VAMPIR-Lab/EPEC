@@ -60,7 +60,7 @@ pa_comp = Plots.plot()
 #@infiltrate
 
 vals = [ Float64[] for _ in 1:100]
-for (index, c) in results[3].costs
+for (index, c) in results[1].costs
     T = length(c.a.running.competitive)
     for t in 1:T
         push!(vals[t], c.a.running.competitive[t] + c.a.running.velocity[t])
@@ -79,7 +79,7 @@ Plots.plot!(avgs .+ stderrs, color=:blue, linewidth=2)
 Plots.plot!(avgs .- stderrs, color=:blue, linewidth=2)
 
 vals2 = [ Float64[] for _ in 1:100]
-for (index, c) in results[9].costs
+for (index, c) in results[3].costs
     T = length(c.a.running.competitive)
     for t in 1:T
         push!(vals2[t], c.a.running.competitive[t] + c.a.running.velocity[t])
