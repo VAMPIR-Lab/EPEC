@@ -1,6 +1,6 @@
 using Random
 using Statistics
-
+using StatsPlots
 #const xdim = 4
 #const udim = 2
 # generate x0s
@@ -263,7 +263,7 @@ function process_costs(results, modes_sorted; property=:total)
 
     compressed_table = Dict()
     for strat in ["S", "N", "L", "F"]
-        compressed_table[strat] = full_table[strat, "S"] + full_table[strat, "N"] + full_table[strat, "F"] + full_table[strat, "L"]
+        compressed_table[strat] = (full_table[strat, "S"] + full_table[strat, "N"] + full_table[strat, "F"] + full_table[strat, "L"])/4
     end
 	(;full=full_table, compressed=compressed_table)
 end

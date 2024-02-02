@@ -2,6 +2,7 @@
 #using GLMakie
 #using JLD2
 #using Plots
+#using LaTeXStrings
 
 #include("racing.jl")
 include("random_racing_helper.jl")
@@ -21,10 +22,39 @@ include("random_racing_helper.jl")
 #    lat_max=2.0);
 
 data_dir = "data"
-x0s_filename = "x0s_1500samples_2024-01-31_1720"
-results_suffix = "_(x0s_1500samples_2024-01-31_1720)_2024-01-31_1720_100steps";
+x0s_filename = "x0s_2000samples_2024-02-01_1739"
+results_suffix = "_(x0s_2000samples_2024-02-01_1739)_2024-02-01_1739_50steps";
 init_file = jldopen("$(data_dir)/$(x0s_filename).jld2", "r")
 x0s = init_file["x0s"]
+
+#x0s_inds = [1, 100, 1000, 2000]
+#p = Plots.plot(layout=(2,2))
+#plots = []
+#rad = 1
+#lat = 3.0
+#ymax = 2.0
+#circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
+#circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
+
+#for x0 in [x0s[i] for i in x0s_inds]
+#    p = Plots.plot()
+#    x, y, u, v = x0[1:4]
+#    circ_x_shifted_A = circ_x .+ x
+#    circ_y_shifted_A = circ_y .+ y
+#    Plots.plot!(circ_x_shifted_A, circ_y_shifted_A, line=:path, color=:blue, label="")
+#    Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:blue, label="", linewidth=.1)
+
+#    x, y, u, v = x0[5:8]
+#    circ_x_shifted_B = circ_x .+ x
+#    circ_y_shifted_B = circ_y .+ y
+#    Plots.plot!(circ_x_shifted_B, circ_y_shifted_B, line=:path, color=:red, label="")
+#    Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:red, label="", linewidth=.1)
+#    Plots.plot!([-lat, -lat], [-ymax, ymax], color=:black, label="")
+#    Plots.plot!([+lat, +lat], [-ymax, ymax], color=:black, label="")
+#    push!(plots, p)
+#end
+
+#Plots.plot(plots..., margin=1e-3*Plots.mm)
 
 function process(results; is_trimming=false, trim_steps=100)
     costs = Dict()
@@ -55,48 +85,61 @@ for i in modes
     results[i] = process(file["results"])
 end
 
-pa_comp = Plots.plot()
+#pa_comp = Plots.plot()
 #pb_comp = Plots.plot()
 #@infiltrate
 
-vals = [ Float64[] for _ in 1:100]
-for (index, c) in results[1].costs
-    T = length(c.a.running.competitive)
-    for t in 1:T
-        push!(vals[t], c.a.running.competitive[t] + c.a.running.velocity[t])
-        # CI = 1.96*std(vals)/sqrt(length(vals));
+function get_mean_running_cost(results, i; T = 50)
+    vals = [ Float64[] for _ in 1:T]
+    for (index, c) in results[i].costs
+        T = length(c.a.running.total)
+        for t in 1:T
+            push!(vals[t], c.a.running.total[t])# + c.a.running.velocity[t])
+            # CI = 1.96*std(vals)/sqrt(length(vals));
+        end
     end
-end
-avgs = map(vals) do val
-    mean(val)
-end
-stderrs = map(vals) do val
-    1.96*std(val) / sqrt(length(val))
-end
-
-Plots.plot(avgs, color=:blue, linewidth=5)
-Plots.plot!(avgs .+ stderrs, color=:blue, linewidth=2)
-Plots.plot!(avgs .- stderrs, color=:blue, linewidth=2)
-
-vals2 = [ Float64[] for _ in 1:100]
-for (index, c) in results[3].costs
-    T = length(c.a.running.competitive)
-    for t in 1:T
-        push!(vals2[t], c.a.running.competitive[t] + c.a.running.velocity[t])
-        # CI = 1.96*std(vals)/sqrt(length(vals));
+    avgs = map(vals) do val
+        mean(val)
     end
-end
-avgs2 = map(vals2) do val
-    mean(val)
-end
-stderrs2 = map(vals2) do val
-    1.96*std(val) / sqrt(length(val))
+    stderrs = map(vals) do val
+        1.96*std(val) / sqrt(length(val))
+    end
+    (avgs, stderrs)
 end
 
+avgs_1, stderrs_1 = get_mean_running_cost(results, 1)
+avgs_3, stderrs_3 = get_mean_running_cost(results, 3)
+avgs_9, stderrs_9 = get_mean_running_cost(results, 9)
+avgs_6, stderrs_6 = get_mean_running_cost(results, 6)
+avgs_10, stderrs_10 = get_mean_running_cost(results, 10)
 
-Plots.plot!(avgs2, color=:red, linewidth=5)
-Plots.plot!(avgs2 .+ stderrs2, color=:red, linewidth=2)
-Plots.plot!(avgs2 .- stderrs2, color=:red, linewidth=2)
+#, yaxis=(formatter=y->string(round(Int, y / 10^-4)))
+#, yaxis=(formatter=y->round(y; sigdigits=4)
+
+#Plots.plot(layout=(2,1))
+
+p = Plots.plot(avgs_3, ribbon = stderrs_3, fillalpha = 0.3, color=:blue, linewidth=3, label = "Nash equilibrium (N-N)")
+Plots.plot!(p, avgs_9, ribbon = stderrs_9, fillalpha = 0.3, color=:red, linewidth=3, label = "Bilevel (L-F)")
+annotate!([(3, 8.5e-3, Plots.text(L"\times10^{-3}", 12, :black, :center))])
+Plots.plot!(p, size=(500,400), xlabel="Simulation steps", ylabel="Mean running cost", yaxis=(formatter=y->round(y*1e3; sigdigits=4)))
+savefig("./figures/plot_3_v_9_running_cost.pdf")
+
+#p = Plots.plot(avgs_6, ribbon = stderrs_6, fillalpha = 0.3, color=:blue, linewidth=3, label = "Nash equilibrium (F-F)")
+#Plots.plot!(p, avgs_10, ribbon = stderrs_10, fillalpha = 0.3, color=:red, linewidth=3, label = "Bilevel (L-L)")
+#annotate!([(3, 8.5e-3, Plots.text(L"\times10^{-2}", 12, :black, :center))])
+#Plots.plot!(p, size=(500,400), xlabel="Simulation steps", ylabel="Average total running cost", yaxis=(formatter=y->round(y*1e2; sigdigits=4)))
+#savefig("./figures/plot_3_v_9_running_cost.pdf")
+
+#Plots.plot!(avgs_1, ribbon = stderrs_1, fillalpha = 0.3, color=:blue, linewidth=3, label = "Nash equilibrium (N-N)")
+#Plots.plot!(avgs_6, ribbon = stderrs_6, fillalpha = 0.3, color=:red, linewidth=3, label = "Bilevel (F-F)")
+#Plots.plot!(avgs_10, ribbon = stderrs_10, fillalpha = 0.3, color=:red, linewidth=3, label = "Bilevel(L-L)")
+
+
+#Plots.plot!(avgs2, ribbon = stderrs2, fillalpha = 0.3, color=:red, linewidth=3, label = "Nash equilibrium (N-N)")
+#savefig("/figures/plot_1_v_3_running_cost.png")
+#Plots.plot!(avgs2, color=:red, linewidth=5)
+#Plots.plot!(avgs2 .+ stderrs2, color=:red, linewidth=2)
+#Plots.plot!(avgs2 .- stderrs2, color=:red, linewidth=2)
 
 
 #for (index, c) in results[3].costs
@@ -201,6 +244,17 @@ comp_cost_table = process_costs(results, modes_sorted, property=:competitive)
 comp2_cost_table = process_comp_cost(results, modes_sorted)
 
 
+#p = Plots.boxplot(["S" "N" "L" "F"], [total_cost_table.compressed["S"], total_cost_table.compressed["N"], total_cost_table.compressed["L"], total_cost_table.compressed["F"]], legend=false)
+
+p = Plots.boxplot(["S-S" "N-N" "L-F"], [total_cost_table.full["S", "S"], 
+total_cost_table.full["N", "N"], 
+total_cost_table.full["L", "F"]] 
+#total_cost_table.full["F", "F"],
+#total_cost_table.full["L", "L"]]
+, legend=false)
+annotate!([(.25, 1.7e-1, Plots.text(L"\times10^{-3}", 12, :black, :center))])
+Plots.plot!(p, size=(500,400), xlabel="Competition type", ylabel="Mean running cost", yaxis=(formatter=y->round(y*1e3; sigdigits=4)))
+savefig("./figures/boxplot_running_cost.pdf")
 
 println("		mean (±95% CI) [95% CI l, u]	std	min	max")
 
@@ -211,18 +265,18 @@ end
 
 println("Total:")
 for (k, v) in total_cost_table.compressed
-    print_mean_etc(v; title=k, scale=100)
+    print_mean_etc(v; title=k, scale=1000)
 end
 
-println("Lane:")
-for (k, v) in lane_cost_table.compressed
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Lane:")
+#for (k, v) in lane_cost_table.compressed
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
-println("Control:")
-for (k, v) in control_cost_table.compressed
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Control:")
+#for (k, v) in control_cost_table.compressed
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
 #println("Velocity:")
 #for (k, v) in velocity_cost_table.compressed
@@ -234,32 +288,32 @@ end
 #    print_mean_etc(v; title=k, scale=100)
 #end
 
-println("Combined competitive:")
-for (k, v) in comp2_cost_table.compressed
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Combined competitive:")
+#for (k, v) in comp2_cost_table.compressed
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
 
-println("Steps:")
-for (k, v) in steps_table.full
-    print_mean_etc(v; title=k, scale=1)
-end
+#println("Steps:")
+#for (k, v) in steps_table.full
+#    print_mean_etc(v; title=k, scale=1)
+#end
 
 
 println("Total:")
 for (k, v) in total_cost_table.full
-    print_mean_etc(v; title=k, scale=100)
+    print_mean_etc(v; title=k, scale=1000)
 end
 
-println("Lane:")
-for (k, v) in lane_cost_table.full
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Lane:")
+#for (k, v) in lane_cost_table.full
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
-println("Control:")
-for (k, v) in control_cost_table.full
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Control:")
+#for (k, v) in control_cost_table.full
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
 #println("Velocity:")
 #for (k, v) in velocity_cost_table.full
@@ -271,10 +325,10 @@ end
 #    print_mean_etc(v; title=k, scale=100)
 #end
 
-println("Combined competitive:")
-for (k, v) in comp2_cost_table.full
-    print_mean_etc(v; title=k, scale=100)
-end
+#println("Combined competitive:")
+#for (k, v) in comp2_cost_table.full
+#    print_mean_etc(v; title=k, scale=100)
+#end
 
 
 #@info "terminal cost mean CI min max"
