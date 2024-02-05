@@ -1,25 +1,25 @@
-#using EPEC
-#using GLMakie
-#using JLD2
-#using Plots
-#using LaTeXStrings
+using EPEC
+using GLMakie
+using JLD2
+using Plots
+using LaTeXStrings
 
-#include("racing.jl")
+include("racing.jl")
 include("random_racing_helper.jl")
 
-#probs = setup(; T=10,
-#    Δt=0.1,
-#    r=1.0,
-#    α1=1e-3,
-#    α2=1e-4,
-#    α3=1e-1,
-#    β=1e-1, #.5, # sensitive to high values
-#    cd=0.2, #0.25,
-#    u_max_nominal=1.0,
-#    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
-#    box_length=5.0,
-#    box_width=2.0,
-#    lat_max=2.0);
+probs = setup(; T=10,
+    Δt=0.1,
+    r=1.0,
+    α1=1e-3,
+    α2=1e-4,
+    α3=1e-1,
+    β=1e-1, #.5, # sensitive to high values
+    cd=0.2, #0.25,
+    u_max_nominal=1.0,
+    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
+    box_length=5.0,
+    box_width=2.0,
+    lat_max=2.0);
 
 data_dir = "data"
 x0s_filename = "x0s_2000samples_2024-02-01_1739"
@@ -118,10 +118,10 @@ avgs_10, stderrs_10 = get_mean_running_cost(results, 10)
 
 #Plots.plot(layout=(2,1))
 
-p = Plots.plot(avgs_3, ribbon = stderrs_3, fillalpha = 0.3, color=:blue, linewidth=3, label = "Nash equilibrium (N-N)")
-Plots.plot!(p, avgs_9, ribbon = stderrs_9, fillalpha = 0.3, color=:red, linewidth=3, label = "Bilevel (L-F)")
+p = Plots.plot(avgs_3, ribbon = stderrs_3, fillalpha = 0.3, linewidth=3, label = "Nash competition (N-N)")
+Plots.plot!(p, avgs_9, ribbon = stderrs_9, fillalpha = 0.3, linewidth=3, label = "Bilevel competition (L-F)")
 annotate!([(3, 8.5e-3, Plots.text(L"\times10^{-3}", 12, :black, :center))])
-Plots.plot!(p, size=(500,400), xlabel="Simulation steps", ylabel="Mean running cost", yaxis=(formatter=y->round(y*1e3; sigdigits=4)))
+Plots.plot!(p, size=(500,400), xlabel="Simulation steps", ylabel="Mean running cost per time step", yaxis=(formatter=y->round(y*1e3; sigdigits=4)))
 savefig("./figures/plot_3_v_9_running_cost.pdf")
 
 #p = Plots.plot(avgs_6, ribbon = stderrs_6, fillalpha = 0.3, color=:blue, linewidth=3, label = "Nash equilibrium (F-F)")
@@ -246,14 +246,14 @@ comp2_cost_table = process_comp_cost(results, modes_sorted)
 
 #p = Plots.boxplot(["S" "N" "L" "F"], [total_cost_table.compressed["S"], total_cost_table.compressed["N"], total_cost_table.compressed["L"], total_cost_table.compressed["F"]], legend=false)
 
-p = Plots.boxplot(["S-S" "N-N" "L-F"], [total_cost_table.full["S", "S"], 
+p = Plots.boxplot(["Nash competition, N-N" "Bilevel competition, L-F "], [
 total_cost_table.full["N", "N"], 
 total_cost_table.full["L", "F"]] 
 #total_cost_table.full["F", "F"],
 #total_cost_table.full["L", "L"]]
-, legend=false)
-annotate!([(.25, 1.7e-1, Plots.text(L"\times10^{-3}", 12, :black, :center))])
-Plots.plot!(p, size=(500,400), xlabel="Competition type", ylabel="Mean running cost", yaxis=(formatter=y->round(y*1e3; sigdigits=4)))
+, legend=false, outliers=false)
+annotate!([(.2, 9e-2, Plots.text(L"\times10^{-3}", 12, :black, :center))])
+Plots.plot!(p, size=(500,400), xlabel="Competition type", ylabel="Mean running cost per time step", yaxis=(formatter=y->round(y*1e3; sigdigits=4)))
 savefig("./figures/boxplot_running_cost.pdf")
 
 println("		mean (±95% CI) [95% CI l, u]	std	min	max")
