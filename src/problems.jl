@@ -383,6 +383,7 @@ function solve_low_level!(mcp, θ; silent=true)
     (; status, info)
 end
 
+#f_out = zeros(n);    F(n, θ_out, f_out);
 function check_mcp_fail(f, z, l, u; tol=1e-6)
     n = length(f)
     fails = falses(n)

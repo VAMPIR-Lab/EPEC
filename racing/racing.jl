@@ -717,7 +717,7 @@ function animate(probs, sim_results; save=false, filename="test.mp4", sleep_dura
     T = length(sim_results)
 
     if save
-        record(f, filename, 1:T; framerate=20) do t
+        record(f, filename, 1:T; framerate=10) do t
             update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
             ax.title = string(t)
         end
@@ -730,22 +730,22 @@ function animate(probs, sim_results; save=false, filename="test.mp4", sleep_dura
     end
 end
 
-function visualize(; rad=0.5, lat=6.0)
-    f = Figure(resolution=(1000, 1000))
+function visualize(; T=10, rad=0.5, lat=6.0)
+    f = Figure(resolution=(1000, 1000), grid = false)
     ax = Axis(f[1, 1], aspect=DataAspect())
-
+    #resize_to_layout!(f)
     GLMakie.lines!(ax, [-lat, -lat], [-10.0, 1000.0], color=:black)
     GLMakie.lines!(ax, [+lat, +lat], [-10.0, 1000.0], color=:black)
 
-    XA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
-    XB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:10)
+    XA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    XB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
 
     circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
     circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
     GLMakie.lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=5)
     GLMakie.lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=5)
 
-    for t in 1:10
+    for t in 1:T
         GLMakie.lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)
         GLMakie.lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash)
     end
@@ -767,7 +767,8 @@ function update_visual!(ax, XA, XB, x0, P1, P2; T=10, lat=6.0)
     end
 
     GLMakie.xlims!(ax, -2 * lat, 2 * lat)
-    GLMakie.ylims!(ax, x0[6] - lat, maximum([P1[T, 2], P2[T, 2]]) + lat)
+    avg_y_pos = (x0[2] + x0[6])/2
+    GLMakie.ylims!(ax, avg_y_pos - lat , avg_y_pos + 3 * lat)
 end
 
 function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
@@ -782,7 +783,7 @@ function show_me(θ, x0; T=10, t=0, lat_pos_max=1.0)
     end
     Z = extract(θ)
 
-    (f, ax, XA, XB, lat) = visualize(; lat=lat_pos_max)
+    (f, ax, XA, XB, lat) = visualize(; T=T, lat=lat_pos_max)
     display(f)
 
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
