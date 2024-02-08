@@ -568,7 +568,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], mode=1)
         if is_x0_infeasible
             # currently status isn't saved
             print(status)
-            print("\n")  
+            print("\n")
             results[t] = (; x0, P1=repeat(x0', 10, 1), P2=repeat(x0', 10, 1))
             break
         end
@@ -730,14 +730,17 @@ function animate(probs, sim_results; save=false, filename="test.mp4", sleep_dura
     T = length(sim_results)
 
     if save
-        record(f, filename, 1:T; framerate=10) do t
-            update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
-            ax.title = "$(mode_str[mode][2])\ntime step: $(string(t))"
+        # extra 5 frames at the end because powerpoint is being weird
+        record(f, filename, 1:T+10; framerate=10) do t
+            if t <= T
+                update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
+                ax.title = "$(mode_str[mode][2])\nTime step = $(string(t))"
+            end
         end
     else
         for t in 1:T
             update_visual!(ax, XA, XB, sim_results[t].x0, sim_results[t].P1, sim_results[t].P2; T=probs.params.T, lat=lat)
-            ax.title = "$(mode_str[mode][2])\ntime step: $(string(t))"
+            ax.title = "$(mode_str[mode][2])\nTime step = $(string(t))"
             sleep(sleep_duration)
         end
     end

@@ -20,7 +20,7 @@ include("../racing/racing.jl")
 filtered_keys = Dict()
 
 for (index, res) in results
-	filtered_keys[index] = [k for (k, v) in res.steps if v == 50]
+	filtered_keys[index] = [k for (k, v) in res.steps if v >= 30]
 end
 
 #intersected_keys = copy(filtered_keys[1])
@@ -29,18 +29,20 @@ end
 #	global intersected_keys
 #	intersected_keys = intersect(intersected_keys, v);
 #end 
-intersected_keys = intersect(filtered_keys[3], filtered_keys[9])
+intersected_keys = intersect(filtered_keys[6], filtered_keys[10])
 
 
 #using Random
 sampled_keys = rand(intersected_keys, 10)
 
-#for k in sampled_keys
-#	for mymode in [3, 9]
-#		sim_results = solve_simulation(probs, 50; x0=x0s[k], mode=mymode);
-#		animate(probs, sim_results; save=true, filename="x0_$(k)_mode$(mymode).mp4", mode=mymode);
-#	end
-#end
+
+for k in sampled_keys
+#k = 998
+	for mymode in [6, 10]
+		sim_results = solve_simulation(probs, 50; x0=x0s[k], mode=mymode);
+		animate(probs, sim_results; save=true, filename="x0_$(k)_mode$(mymode).mp4", mode=mymode);
+	end
+end
 #show_me(safehouse.θ_out, safehouse.w; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
 
