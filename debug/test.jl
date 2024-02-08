@@ -17,7 +17,6 @@ include("../racing/racing.jl")
 #    box_width=2.0,
 #    lat_max=2.0);
 
-
 filtered_keys = Dict()
 
 for (index, res) in results
@@ -32,48 +31,29 @@ end
 #end 
 intersected_keys = intersect(filtered_keys[3], filtered_keys[9])
 
+
+#using Random
+sampled_keys = rand(intersected_keys, 10)
+
+#for k in sampled_keys
+#	for mymode in [3, 9]
+#		sim_results = solve_simulation(probs, 50; x0=x0s[k], mode=mymode);
+#		animate(probs, sim_results; save=true, filename="x0_$(k)_mode$(mymode).mp4", mode=mymode);
+#	end
+#end
+#show_me(safehouse.θ_out, safehouse.w; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+
+
 # x0s[1000]
 #i = rand(1:2000)
 #@info "$i"
 #i = 177
-i = 33 #  32,41,29,24,33
-x0 = x0s[i]
-mymode = 3;
+#i = 66 #  32,41,29,24,33
+#x0 = x0s[i]
+#mymode = 6;
 
-
-#x0 = [
-#0.21585196022682754
-#25.286691700718627
-# 0.608529256154026
-# 4.381609010493397
-# 1.228515598004621
-#24.818642861157482
-# 1.4561311046522056
-# 5.673645746247613
-#]
-
-# i = 1000
-# step 7
-#x0 = [
-#	1.6313777749128915
-#	2.424405121116234
-#	1.0764163851034225-1.0
-#	2.3670311446993164
-#	0.05661870915779531
-#   -0.10512992189500174
-#	1.0764163794050767
-#	2.294077918939926
-#]  
-
-for mymode in [3, 9]
-	sim_results = solve_simulation(probs, 150; x0, mode=mymode);
-	animate(probs, sim_results; save=true, filename="x0_$(i)_mode$(mymode).mp4");
-end
-
-#show_me(safehouse.θ_out, safehouse.w; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-
-#sim_results = solve_simulation(probs, 1; x0, mode=9);
-#animate(probs, sim_results; save=false);
+#sim_results = solve_simulation(probs, 100; x0, mode=mymode);
+#animate(probs, sim_results; save=false, mode=mymode);
 
 #(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
 #display(f)
