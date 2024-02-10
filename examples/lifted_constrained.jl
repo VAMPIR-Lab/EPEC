@@ -1,3 +1,5 @@
+using GLMakie
+
 function dist2(a,b)
     (a-b)'*(a-b)
 end
