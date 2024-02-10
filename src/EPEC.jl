@@ -10,7 +10,6 @@ using Infiltrator
     
 
 include("problems.jl")
-include("../examples/lifted_constrained.jl")
 
 export OptimizationProblem, solve
 
