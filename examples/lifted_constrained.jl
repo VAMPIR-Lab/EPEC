@@ -3,7 +3,6 @@ using GLMakie
 function dist2(a,b)
     (a-b)'*(a-b)
 end
-
 function f1(Z)
     @inbounds X1a = @view(Z[1:2])
     @inbounds X1b = @view(Z[3:4])

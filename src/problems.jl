@@ -307,8 +307,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
     #end
 
     if status != PATHSolver.MCP_Solved
-        @infiltrate
-        @info "Solver failure"
+        error("Solver failure")
         return
     end
 
