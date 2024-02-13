@@ -129,23 +129,67 @@ function setup(; r=1.0,
     problems = (; gnep, extract_gnep, params=(; r, x_max, pv_max, N, m, α))
 end
 
-function solve_lifted(probs; z=nothing)
-    θ = randn(probs[1].gnep.top_level.n)
-    if !isnothing(z)
-        θ[1:length(z)] .= z
+function solve_lifted(probs, seed)
+    if !isnothing(seed)
+        rng = MersenneTwister(seed)
+    else
+        rng = MersenneTwister()
     end
+    θ = rand(rng, probs[1].gnep.top_level.n)
     for prob in probs
-        try
+        #try
             θ = solve(prob.gnep, θ)
-        catch e
-            Z = prob.extract_gnep(θ)
-            α = prob.params.α
-            @info "failed for stiffness=$α"
-            return Z
-        end
+        #catch e
+        #    Z = prob.extract_gnep(θ)
+        #    α = prob.params.α
+        #    return Z
+        #end
     end
     Z = probs[end].extract_gnep(θ)
 end
+
+function timing_results()
+    N_range = 2:7
+    m_range = 2:5
+    num_evals = 10
+    times = zeros(length(N_range), length(m_range), num_evals)
+
+    for (eN,N) in enumerate(N_range)
+        for (em,m) in enumerate(m_range)
+            probs = [EPEC.setup(; N, m, x_max=10.0, α = s, r=1.0, symmetric_start=false, symmetric_end=false, p1_simple=true) for s in [1.0,2,4,8,16,32,64,128]]
+            seed = 1  
+            tries = 0
+            @info "N = $N, m = $m"
+            display(sum(times; dims=3))
+            while true
+                try 
+                    t0 = @elapsed (EPEC.solve_lifted(probs, seed))
+                    ts = map(1:num_evals) do _
+                        t = @elapsed (EPEC.solve_lifted(probs, seed))
+                    end
+                    times[eN, em, :] = ts
+                    @info "Success."
+                    break
+                catch e
+                    if e isa InterruptException
+                        @infiltrate
+                    end
+                    tries += 1
+                    if tries == 100
+                        times[eN, em,:] .= -1.0
+                        @info "Can't get to work. Continuing."
+                        break
+                    end
+                    @info "incrementing seed."
+                    seed += 1
+                end
+            end
+        end
+    end
+    times
+end
+
+
 
 function visualize(probs, Z)
 

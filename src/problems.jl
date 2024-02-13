@@ -294,7 +294,7 @@ function solve_top_level(mcp, bounds, θ; silent=true)
          l,
          u,
          x;
-         silent=false,
+         silent=true,
          nnz=nnz_total,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
@@ -359,7 +359,7 @@ function solve_low_level!(mcp, θ; silent=true)
          mcp.l,
          mcp.u,
          z;
-         silent,
+         silent=true,
          nnz=nnz_total,
          jacobian_structure_constant = true,
          jacobian_data_contiguous = true,
