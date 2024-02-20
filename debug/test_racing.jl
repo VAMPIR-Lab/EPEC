@@ -2,6 +2,7 @@ using EPEC
 using GLMakie
 using Plots
 include("../racing/racing.jl")
+include("../racing/visualize_racing.jl")
 
 probs = setup(; T=10,
     Δt=0.1,
@@ -20,7 +21,7 @@ probs = setup(; T=10,
 x0 = [1.0, 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
 #x0 = [.5, 0, 0, 2, 0, 1, 0, 1.5]	
 
-sim_results = solve_simulation(probs, 50; x0, mode=9);
+sim_results = solve_simulation(probs, 1; x0, mode=9);
 
 animate(probs, sim_results; save=false);
 
