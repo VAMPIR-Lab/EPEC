@@ -1,37 +1,42 @@
+# Z := [xᵃ₁ ... xᵃₜ | uᵃ₁ ... uᵃₜ | xᵇ₁ ... xᵇₜ | uᵇ₁ ... uᵇₜ]
+# τⁱ := [xⁱ₁ ... xⁱₜ | uⁱ₁ ... uⁱₜ]
+# Z := [τ¹ | τ² | ϕ¹ | ϕ²]
 
-# instantenous velocity change (̇x = u)
-# xa := [xa1 xa2], ua := [ua1 ua2]
-# xb := [xb1 xb2], ub := [ub1 ub2]
-# x[k+1] = dyn(x[k], u[k]; Δt) (pointmass dynamics)
-# Xa = [xa[1] | ... xa[T]] ∈ R^(2T)
-# Ua = [ua[1] | ... ua[T]] ∈ R^(2T)
-# Xb = [xb[1] | ... xb[T]] ∈ R^(2T)
-# Ub = [ub[1] | ... ub[T]] ∈ R^(2T)
-# z = [Xa | Ua | Xb | Ub | xa0 | xb0] ∈ R^(8T + 4)
+function view_Z(Z; xdim=4, udim=2)
+    T = Int((length(Z) - 2 * xdim) / (4 * (xdim + udim)))
+    indices = Dict()
+    idx = 0
+    for (len, name) in zip([xdim*T, udim*T, xdim*T, udim*T,  xdim*T, udim*T, xdim*T, udim*T, xdim, xdim], ["Xa", "Ua", "Xb", "Ub", "Xpa", "Upa", "Xpb", "Upb", "x0a", "x0b"])
+        indices[name] = (idx+1):(idx+len)
+        idx += len
+    end 
+    @inbounds Xa = @view(Z[indices["Xa"]])
+    @inbounds Ua = @view(Z[indices["Ua"]])
+    @inbounds Xb = @view(Z[indices["Xb"]])
+    @inbounds Ub = @view(Z[indices["Ub"]])
+    @inbounds Xpa = @view(Z[indices["Xpa"]])
+    @inbounds Upa = @view(Z[indices["Upa"]])
+    @inbounds Xpb = @view(Z[indices["Xpb"]])
+    @inbounds Upb = @view(Z[indices["Upb"]])
+    @inbounds x0a = @view(Z[indices["x0a"]])
+    @inbounds x0b = @view(Z[indices["x0b"]])
+    (T, Xa, Ua, Xb, Ub, Xpa, Upa, Xpb, Upb, x0a, x0b, indices)
+end
 
-# problem size
-const xdim = 2
-const udim = 2
+function f1(Z; γ=1.0, α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    T, Xa, Ua, Xb, Ub, Xpa, Upa, Xpb, Upb, x0a, x0b, indices = view_Z(Z)
 
-function view_Z(z)
-    T = Int((length(z) - 2 * xdim) / (2 * (xdim + udim)))
-    @inbounds Xa = @view(z[1:xdim*T])
-    @inbounds Ua = @view(z[xdim*T+1:(xdim+udim)*T])
-    @inbounds Xb = @view(z[(xdim+udim)*T+1:(2*xdim+udim)*T])
-    @inbounds Ub = @view(z[(2*xdim+udim)*T+1:2*(xdim+udim)*T])
-    @inbounds x0a = @view(z[2*(xdim+udim)*T+1:2*(xdim+udim)*T+xdim])
-    @inbounds x0b = @view(z[2*(xdim+udim)*T+xdim+1:2*(xdim+udim)*T+2*xdim])
-    (T, Xa, Ua, Xb, Ub, x0a, x0b)
+    γ * fa(T, Xa, Ua, Xb; α1, α2, α3, β) + (1.0 - γ) * fa(T, Xa, Ua, Xpb; α1, α2, α3, β)
+end
+
+function f2(Z; γ=1.0, α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    T, Xa, Ua, Xb, Ub, Xpa, Upa, Xpb, Upb, x0a, x0b, indices = view_Z(Z)
+
+    γ * fb(T, Xb, Ub, Xa; α1, α2, α3, β) + (1.0 - γ) * fb(T, Xb, Ub, Xpa; α1, α2, α3, β)
 end
 
 # P1 wants to make forward progress and stay in center of lane.
-function f1(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds Xa = @view(Z[1:4*T])
-    @inbounds Ua = @view(Z[4*T+1:6*T])
-    @inbounds Xb = @view(Z[6*T+1:10*T])
-    @inbounds Ub = @view(Z[10*T+1:12*T])
-
+function fa(T, Xa, Ua, Xb; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     cost = 0.0
 
     for t in 1:T
@@ -44,13 +49,7 @@ function f1(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
 end
 
 # P2 wants to make forward progress and stay in center of lane.
-function f2(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds Xa = @view(Z[1:4*T])
-    @inbounds Ua = @view(Z[4*T+1:6*T])
-    @inbounds Xb = @view(Z[6*T+1:10*T])
-    @inbounds Ub = @view(Z[10*T+1:12*T])
-
+function fb(T, Xb, Ub, Xa; α1=1.0, α2=0.0, α3=0.0, β=1.0)
     cost = 0.0
 
     for t in 1:T
@@ -118,6 +117,7 @@ function accel_bounds_1(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_w
     u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
     (u_max_1, u_max_2, u_max_3, u_max_4)
 end
+
 function accel_bounds_2(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
     T = Int(length(Xa) / 4)
     d = mapreduce(vcat, 1:T) do t
@@ -153,13 +153,7 @@ function g1(Z,
     box_length=3.0,
     box_width=1.0,
     col_buffer=r / 5)
-    T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds Xa = @view(Z[1:4*T])
-    @inbounds Ua = @view(Z[4*T+1:6*T])
-    @inbounds Xb = @view(Z[6*T+1:10*T])
-    @inbounds Ub = @view(Z[10*T+1:12*T])
-    @inbounds x0a = @view(Z[12*T+1:12*T+4])
-    @inbounds x0b = @view(Z[12*T+5:12*T+8])
+    T, Xa, Ua, Xb, Ub, Xpa, Upa, Xpb, Upb, x0a, x0b, indices = view_Z(Z)
 
     g_dyn = dyn(Xa, Ua, x0a, Δt, cd)
     g_col = col(Xa, Xb, r)
@@ -196,13 +190,7 @@ function g2(Z,
     box_length=3.0,
     box_width=1.0,
     col_buffer=r / 5)
-    T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds Xa = @view(Z[1:4*T])
-    @inbounds Ua = @view(Z[4*T+1:6*T])
-    @inbounds Xb = @view(Z[6*T+1:10*T])
-    @inbounds Ub = @view(Z[10*T+1:12*T])
-    @inbounds x0a = @view(Z[12*T+1:12*T+4])
-    @inbounds x0b = @view(Z[12*T+5:12*T+8])
+    T, Xa, Ua, Xb, Ub, Xpa, Upa, Xpb, Upb, x0a, x0b, indices = view_Z(Z)
 
     g_dyn = dyn(Xb, Ub, x0b, Δt, cd)
     g_col = col(Xa, Xb, r)
@@ -257,10 +245,15 @@ function setup(; T=10,
 
     OP1 = OptimizationProblem(12 * T + 8, 1:6*T, f1_pinned, g1_pinned, lb, ub)
     OP2 = OptimizationProblem(12 * T + 8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
+    OP1_phantom = OptimizationProblem(12 * T + 8, 1:6*T, f1_pinned, g1_pinned, lb, ub)
+    OP2_phantom = OptimizationProblem(12 * T + 8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
 
-    sp_a = EPEC.create_epec((1, 0), OP1)
-    gnep = [OP1 OP2]
-    bilevel = [OP1; OP2]
+    EPEC.create_epec((2, 2), OP1, OP2, OP1_phantom, OP2_phantom)
+
+    #sp_a = EPEC.create_epec((1, 0), OP1)
+    #gnep = [OP1 OP2]
+    #bilevel = [OP1; OP2]
+    phantom = [OP1, OP2; OP2_phantom, OP1_phantom]
 
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
@@ -272,6 +265,7 @@ function setup(; T=10,
         @inbounds x0b = @view(Z[12*T+5:12*T+8])
         (; Xa, Ua, Xb, Ub, x0a, x0b)
     end
+
     function extract_bilevel(θ)
         Z = θ[bilevel.x_inds]
         @inbounds Xa = @view(Z[1:4*T])
