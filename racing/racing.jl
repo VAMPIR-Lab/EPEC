@@ -260,6 +260,7 @@ function setup(; T=10,
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
 
+    
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
         @inbounds Xa = @view(Z[1:4*T])
