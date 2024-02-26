@@ -174,7 +174,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     for (item, ame) in zip([grad_lags_x, grad_lags_z, cons_s_top, λs_top, cons_r, ψs, cons_z], ["grad_lags_x", "grad_lags_z", "cons_s_top", "λs_top", "cons_r", "ψs", "cons_z"])
         f_dict[ame] = (idx+1):(idx+length(item))
         idx += length(item)
-    end 
+    end
 
     Ftotal! = Symbolics.build_function(Ftotal, θall; expression=Val(false))[2]
     Jtotal = Symbolics.sparsejacobian(Ftotal, θ)
@@ -308,7 +308,7 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
     )
 
     if status != PATHSolver.MCP_Solved
-        #@infiltrate
+        @infiltrate
         throw(error("Top-level Solver failure"))
     end
 
@@ -360,13 +360,14 @@ function solve_low_level!(mcp, θ; silent=true)
         mcp.l,
         mcp.u,
         z;
-        silent,
+        silent=false,
         nnz=nnz_total,
         jacobian_structure_constant=true,
         jacobian_data_contiguous=true,
         cumulative_iteration_limit=50_000,
         convergence_tolerance=1e-7,
-        lemke_rank_deficiency_iterations=100
+        lemke_rank_deficiency_iterations=100,
+        preprocess=0
     )
 
     #if status != PATHSolver.MCP_Solved && silent
@@ -374,6 +375,7 @@ function solve_low_level!(mcp, θ; silent=true)
     #end
 
     if status != PATHSolver.MCP_Solved
+        @infiltrate
         throw(error("Low-level Solver failure"))
     end
     #@infiltrate status != PATHSolver.MCP_Solved
