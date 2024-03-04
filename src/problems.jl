@@ -308,7 +308,7 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
     )
 
     if status != PATHSolver.MCP_Solved
-        @infiltrate
+        #@infiltrate
         throw(error("Top-level Solver failure"))
     end
 
@@ -360,7 +360,7 @@ function solve_low_level!(mcp, θ; silent=true)
         mcp.l,
         mcp.u,
         z;
-        silent=false,
+        silent=true,
         nnz=nnz_total,
         jacobian_structure_constant=true,
         jacobian_data_contiguous=true,

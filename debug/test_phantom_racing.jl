@@ -5,7 +5,7 @@ include("../racing/phantom_racing.jl")
 #include("../racing/racing.jl")
 include("../racing/visualize_racing.jl")
 
-probs = setup(; T=2,
+probs = setup(; T=10,
     Δt=0.1,
     r=1.0,
     α1=1e-3,
@@ -26,14 +26,14 @@ probs = setup(; T=2,
 #@info "$i"
 #x0 = x0s[i];
 
-x0 = [-1.097800632523576
+x0 = [1.5966679528041663
 0.0
 0.0
-1.6000274227911389
-0.5669216447507093
-1.22438749327142
+2.4377286884160085
+-0.3161517746722031
+2.200620080698424
 0.0
-0.29792647730429356]
+2.75401313424805]
 
-sim_results = solve_simulation(probs, 1; x0);
+sim_results = solve_simulation(probs, 50; x0);
 animate(probs, sim_results; save=false);

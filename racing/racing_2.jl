@@ -5,53 +5,56 @@ const xdim = 4
 const udim = 2
 
 function view_Z(z)
-    xdim = 4
-    udim = 2
-    T = Int((length(z) - 2 * xdim) / (2 * (xdim + udim))) # 2 real players, 4 players total
-    indices = Dict()
-    idx = 0
-    for (len, name) in zip([xdim * T, udim * T, xdim * T, udim * T, xdim, xdim], ["Xa", "Ua", "Xb", "Ub", "x0a", "x0b"])
-        indices[name] = (idx+1):(idx+len)
-        idx += len
-    end
-    @inbounds Xa = @view(z[indices["Xa"]])
-    @inbounds Ua = @view(z[indices["Ua"]])
-    @inbounds Xb = @view(z[indices["Xb"]])
-    @inbounds Ub = @view(z[indices["Ub"]])
-    @inbounds x0a = @view(z[indices["x0a"]])
-    @inbounds x0b = @view(z[indices["x0b"]])
-    (T, Xa, Ua, Xb, Ub, x0a, x0b, indices)
-end
-
-# each player wants to make forward progress and stay in center of lane
-# e = ego
-# o = opponent
-function f_ego(T, Xe, Ue, Xo; α1, α2, β)
-    xdim = 4
-    udim = 2
-    cost = 0.0
-
-    for t in 1:T
-        @inbounds xa = @view(Xe[xdim*(t-1)+1:xdim*t])
-        @inbounds xb = @view(Xo[xdim*(t-1)+1:xdim*t])
-        @inbounds ua = @view(Ue[udim*(t-1)+1:udim*t])
-        cost += α1 * xa[1]^2 + α2 * ua' * ua + β * (xb[4] - xa[4])
-    end
-    cost
+    T = Int((length(z) - 2 * xdim) / (2 * (xdim + udim)))
+    @inbounds Xa = @view(z[1:xdim*T])
+    @inbounds Ua = @view(z[xdim*T+1:(xdim+udim)*T])
+    @inbounds Xb = @view(z[(xdim+udim)*T+1:(2*xdim+udim)*T])
+    @inbounds Ub = @view(z[(2*xdim+udim)*T+1:2*(xdim+udim)*T])
+    @inbounds x0a = @view(z[2*(xdim+udim)*T+1:2*(xdim+udim)*T+xdim])
+    @inbounds x0b = @view(z[2*(xdim+udim)*T+xdim+1:2*(xdim+udim)*T+2*xdim])
+    (T, Xa, Ua, Xb, Ub, x0a, x0b)
 end
 
 # P1 wants to make forward progress and stay in center of lane.
 function f1(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    #T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
+    #@inbounds Xa = @view(Z[1:4*T])
+    #@inbounds Ua = @view(Z[4*T+1:6*T])
+    #@inbounds Xb = @view(Z[6*T+1:10*T])
+    #@inbounds Ub = @view(Z[10*T+1:12*T])
+
     T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
 
-    f_ego(T, Xa, Ua, Xb; α1, α2, β)
+    #@infiltrate
+    cost = 0.0
+
+    for t in 1:T
+        @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
+        @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
+        @inbounds ua = @view(Ua[udim*(t-1)+1:udim*t])
+        cost += α1 * xa[1]^2 + α2 * ua' * ua - α3 * xa[4] + β * xb[4]
+    end
+    cost
 end
 
 # P2 wants to make forward progress and stay in center of lane.
 function f2(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    #T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
+    #@inbounds Xa = @view(Z[1:4*T])
+    #@inbounds Ua = @view(Z[4*T+1:6*T])
+    #@inbounds Xb = @view(Z[6*T+1:10*T])
+    #@inbounds Ub = @view(Z[10*T+1:12*T])
     T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
 
-    f_ego(T, Xb, Ub, Xa; α1, α2, β)
+    cost = 0.0
+
+    for t in 1:T
+        @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
+        @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
+        @inbounds ub = @view(Ub[udim*(t-1)+1:udim*t])
+        cost += α1 * xb[1]^2 + α2 * ub' * ub - α3 * xb[4] + β * xa[4]
+    end
+    cost
 end
 
 function pointmass(x, u, Δt, cd)
@@ -95,12 +98,27 @@ function responsibility(Xa, Xb)
     end
 end
 
-function accel_bounds(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
+function accel_bounds_1(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
     T = Int(length(Xa) / 4)
     d = mapreduce(vcat, 1:T) do t
         @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
         @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
         [xa[1] - xb[1] xa[2] - xb[2]]
+    end
+    @assert size(d) == (T, 2)
+    du = u_max_drafting - u_max_nominal
+    u_max_1 = du * sigmoid.(d[:, 2] .+ box_length, 10.0, 0) .+ u_max_nominal
+    u_max_2 = du * sigmoid.(-d[:, 2], 10.0, 0) .+ u_max_nominal
+    u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
+    u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
+    (u_max_1, u_max_2, u_max_3, u_max_4)
+end
+function accel_bounds_2(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
+    T = Int(length(Xa) / 4)
+    d = mapreduce(vcat, 1:T) do t
+        @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
+        @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
+        [xb[1] - xa[1] xb[2] - xa[2]]
     end
     @assert size(d) == (T, 2)
     du = u_max_drafting - u_max_nominal
@@ -121,28 +139,40 @@ function l(h; a=5.0, b=4.5)
     sigmoid(h, a, b) - sigmoid(0, a, b)
 end
 
-# e = ego
-# o = opponent
-function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    xdim = 4
-    udim = 2
+function g1(Z,
+    Δt=0.1,
+    r=1.0,
+    cd=1.0,
+    u_max_nominal=2.0,
+    u_max_drafting=5.0,
+    box_length=3.0,
+    box_width=1.0,
+    col_buffer=r / 5)
+    #T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
+    #@inbounds Xa = @view(Z[1:4*T])
+    #@inbounds Ua = @view(Z[4*T+1:6*T])
+    #@inbounds Xb = @view(Z[6*T+1:10*T])
+    #@inbounds Ub = @view(Z[10*T+1:12*T])
+    #@inbounds x0a = @view(Z[12*T+1:12*T+4])
+    #@inbounds x0b = @view(Z[12*T+5:12*T+8])
+    T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
 
-    g_dyn = dyn(Xe, Ue, x0e, Δt, cd)
-    g_col = col(Xe, Xo, r)
-    h_col = responsibility(Xe, Xo)
-    u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds(Xe,
-        Xo,
+
+    g_dyn = dyn(Xa, Ua, x0a, Δt, cd)
+    g_col = col(Xa, Xb, r)
+    h_col = responsibility(Xa, Xb)
+    u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds_1(Xa,
+        Xb,
         u_max_nominal,
         u_max_drafting,
         box_length,
         box_width)
-    long_accel = @view(Ue[udim:udim:end])
-    lat_accel = @view(Ue[1:udim:end])
-    lat_pos = @view(Xe[1:xdim:end])
-    long_vel = @view(Xe[xdim:xdim:end])
+    long_accel = @view(Ua[2:2:end])
+    lat_accel = @view(Ua[1:2:end])
+    lat_pos = @view(Xa[1:4:end])
+    long_vel = @view(Xa[4:4:end])
 
-    [
-        g_dyn
+    [g_dyn
         g_col - l.(h_col) .- col_buffer
         lat_accel
         long_accel - u_max_1
@@ -151,20 +181,51 @@ function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_l
         long_accel - u_max_4
         long_accel
         long_vel
-        lat_pos
-    ]
+        lat_pos]
 end
 
-function g1(Z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+function g2(Z,
+    Δt=0.1,
+    r=1.0,
+    cd=1.0,
+    u_max_nominal=2.0,
+    u_max_drafting=5.0,
+    box_length=3.0,
+    box_width=1.0,
+    col_buffer=r / 5)
+    #T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
+    #@inbounds Xa = @view(Z[1:4*T])
+    #@inbounds Ua = @view(Z[4*T+1:6*T])
+    #@inbounds Xb = @view(Z[6*T+1:10*T])
+    #@inbounds Ub = @view(Z[10*T+1:12*T])
+    #@inbounds x0a = @view(Z[12*T+1:12*T+4])
+    #@inbounds x0b = @view(Z[12*T+5:12*T+8])
     T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
 
-    g_ego(Xa, Ua, Xb, x0a; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-end
+    g_dyn = dyn(Xb, Ub, x0b, Δt, cd)
+    g_col = col(Xa, Xb, r)
+    h_col = -responsibility(Xa, Xb)
+    u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds_2(Xa,
+        Xb,
+        u_max_nominal,
+        u_max_drafting,
+        box_length,
+        box_width)
+    long_accel = @view(Ub[2:2:end])
+    lat_accel = @view(Ub[1:2:end])
+    lat_pos = @view(Xb[1:4:end])
+    long_vel = @view(Xb[4:4:end])
 
-function g2(Z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
-
-    g_ego(Xb, Ub, Xa, x0b; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    [g_dyn
+        g_col - l.(h_col) .- col_buffer
+        lat_accel
+        long_accel - u_max_1
+        long_accel - u_max_2
+        long_accel - u_max_3
+        long_accel - u_max_4
+        long_accel
+        long_vel
+        lat_pos]
 end
 
 function setup(; T=10,
@@ -189,8 +250,8 @@ function setup(; T=10,
 
     f1_pinned = (z -> f1(z; α1, α2, α3, β))
     f2_pinned = (z -> f2(z; α1, α2, α3, β))
-    g1_pinned = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
-    g2_pinned = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    g1_pinned = (z -> g1(z, Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    g2_pinned = (z -> g2(z, Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
 
     OP1 = OptimizationProblem(12 * T + 8, 1:6*T, f1_pinned, g1_pinned, lb, ub)
     OP2 = OptimizationProblem(12 * T + 8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
@@ -199,7 +260,7 @@ function setup(; T=10,
     gnep = [OP1 OP2]
     bilevel = [OP1; OP2]
 
-
+    
     function extract_gnep(θ)
         Z = θ[gnep.x_inds]
         @inbounds Xa = @view(Z[1:4*T])
@@ -639,15 +700,15 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], mode=1)
         ua = r.U1[1, :]
         ub = r.U2[1, :]
 
-        ua_maxes = accel_bounds(xa,
+        ua_maxes = accel_bounds_1(xa,
             xb,
             probs.params.u_max_nominal,
             probs.params.u_max_drafting,
             probs.params.box_length,
             probs.params.box_width)
 
-        ub_maxes = accel_bounds(xb,
-            xa,
+        ub_maxes = accel_bounds_2(xa,
+            xb,
             probs.params.u_max_nominal,
             probs.params.u_max_drafting,
             probs.params.box_length,
