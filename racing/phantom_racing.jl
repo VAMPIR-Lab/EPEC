@@ -24,7 +24,6 @@ function view_z(z)
     (T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices)
 end
 
-
 # each player wants to make forward progress and stay in center of lane
 # e = ego
 # o = opponent
@@ -34,38 +33,12 @@ function f_ego(T, Xe, Ue, Xo; α1, α2, β)
     cost = 0.0
 
     for t in 1:T
-        @inbounds xa = @view(Xe[xdim*(t-1)+1:xdim*t])
-        @inbounds xb = @view(Xo[xdim*(t-1)+1:xdim*t])
-        @inbounds ua = @view(Ue[udim*(t-1)+1:udim*t])
-        cost += α1 * xa[1]^2 + α2 * ua' * ua + β * (xb[4] - xa[4])
+        @inbounds xe = @view(Xe[xdim*(t-1)+1:xdim*t])
+        @inbounds xo = @view(Xo[xdim*(t-1)+1:xdim*t])
+        @inbounds ue = @view(Ue[udim*(t-1)+1:udim*t])
+        cost += α1 * xe[1]^2 + α2 * ue' * ue + β * (xo[4] - xe[4])
     end
     cost
-end
-
-function f_a(z; α1, α2, β, γ)
-    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
-
-    # γ f(τ_a, τ_b) + (1 - γ) f(τ_a, ϕ_b)
-    γ * f_ego(T, Xa, Ua, Xb; α1, α2, β) + (1.0 - γ) * f_ego(T, Xa, Ua, Xbp; α1, α2, β)
-end
-
-function f_b(z; α1, α2, β, γ)
-    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
-
-    # γ f(τ_a, τ_b) + (1 - γ) f(ϕ_a, τ_b)
-    γ * f_ego(T, Xb, Ub, Xa; α1, α2, β) + (1.0 - γ) * f_ego(T, Xb, Ub, Xap; α1, α2, β)
-end
-
-function f_ap(z; α1, α2, β)
-    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
-
-    f_ego(T, Xap, Uap, Xb; α1, α2, β)
-end
-
-function f_bp(z; α1, α2, β)
-    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
-
-    f_ego(T, Xbp, Ubp, Xa; α1, α2, β)
 end
 
 function pointmass(x, u, Δt, cd)
@@ -175,33 +148,60 @@ function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_l
     ]
 end
 
-function g_a(Z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(Z)
+###########
+# f and g #
+###########
+function f_a(z; α1, α2, β, γ)
+    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
 
-    g_ego(Xa, Ua, Xb, x0a; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    # γ f(τ_a, τ_b) + (1 - γ) f(τ_a, ϕ_b)
+    γ * f_ego(T, Xa, Ua, Xb; α1, α2, β) + (1.0 - γ) * f_ego(T, Xa, Ua, Xbp; α1, α2, β)
 end
 
-function g_b(Z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(Z)
+function f_b(z; α1, α2, β, γ)
+    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
 
-    g_ego(Xb, Ub, Xa, x0b; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    # γ f(τ_a, τ_b) + (1 - γ) f(ϕ_a, τ_b)
+    γ * f_ego(T, Xb, Ub, Xa; α1, α2, β) + (1.0 - γ) * f_ego(T, Xb, Ub, Xap; α1, α2, β)
+end
+
+function f_ap(z; α1, α2, β)
+    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
+
+    f_ego(T, Xap, Uap, Xb; α1, α2, β)
+end
+
+function f_bp(z; α1, α2, β)
+    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
+
+    f_ego(T, Xbp, Ubp, Xa; α1, α2, β)
 end
 
 function g_a_all(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
     T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
 
     [g_ego(Xa, Ua, Xb, x0a; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-        g_ego(Xap, Uap, Xb, x0a; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
+        g_ego(Xa, Ua, Xbp, x0a; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
 end
 
 function g_b_all(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
     T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
 
     [g_ego(Xb, Ub, Xa, x0b; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-        g_ego(Xbp, Ubp, Xa, x0b; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
+        g_ego(Xb, Ub, Xap, x0b; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
 end
 
+function g_ap(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
 
+    g_ego(Xap, Uap, Xb, x0a; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+end
+
+function g_bp(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
+
+    g_ego(Xbp, Ubp, Xa, x0b; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+end
 
 function setup(; T=10,
     Δt=0.1,
@@ -226,41 +226,34 @@ function setup(; T=10,
     f_b_pinned = (z -> f_b(z; α1, α2, β, γ))
     f_ap_pinned = (z -> f_ap(z; α1, α2, β))
     f_bp_pinned = (z -> f_bp(z; α1, α2, β))
-    g_a_pinned = (z -> g_a(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
-    g_b_pinned = (z -> g_b(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
     g_a_all_pinned = (z -> g_a_all(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
     g_b_all_pinned = (z -> g_b_all(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    g_ap_pinned = (z -> g_ap(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    g_bp_pinned = (z -> g_bp(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+
 
     lb = [fill(0.0, xdim * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, xdim * T); fill(-u_max_braking, T); fill(min_long_vel, T); fill(-lat_max, T)]
     ub = [fill(0.0, xdim * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(+lat_max, T)]
     lb_all = [lb; lb]
     ub_all = [ub; ub]
 
-    OP_a = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_a_pinned, g_a_pinned, lb, ub)
-    OP_b = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_b_pinned, g_b_pinned, lb, ub)
-    OP_ap = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_ap_pinned, g_a_pinned, lb, ub)
-    OP_bp = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_bp_pinned, g_b_pinned, lb, ub)
-    #OP_sanitya = OptimizationProblem(2 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_a_pinned, g_a_pinned, lb, ub)
-    #OP_sanityb = OptimizationProblem(2 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_b_pinned, g_b_pinned, lb, ub)
+    OP_a = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_a_pinned, g_a_all_pinned, lb_all, ub_all)
+    OP_b = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_b_pinned, g_b_all_pinned, lb_all, ub_all)
+    OP_ap = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_ap_pinned, g_ap_pinned, lb, ub)
+    OP_bp = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f_bp_pinned, g_bp_pinned, lb, ub)
 
-    #sp_a = EPEC.create_epec((1, 0), OP_a)
-    #gnep = [OP_a OP_b OP_a OP_b]
-    #gnep = [OP_ap OP_bp]
     gnep = [OP_a OP_b OP_ap OP_bp]
-    #gnep = [OP_ap OP_bp OP_ap OP_bp]
-    #bilevel_a = [OP_a; OP_ap]
-    #bilevel_b = [OP_b; OP_bp]
-    phantom = EPEC.create_epec((2, 2), OP_a, OP_b, OP_ap, OP_bp)
+    phantom = EPEC.create_epec((2, 2), OP_a, OP_b, OP_ap, OP_bp) # order is fixed
 
-
-    function extract_phantom(θ)
-        z = θ[phantom.x_inds]
-        T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
-        (; Xa, Ua, Xb, Ub, x0a, x0b)
-    end
+    #function extract_phantom(θ)
+        #fix this
+        #z = θ[phantom.x_inds]
+        #T, Xa, Ua, Xb, Ub, Xap, Uap, Xbp, Ubp, x0a, x0b, indices = view_z(z)
+        #(; Xa, Ua, Xb, Ub, x0a, x0b)
+    #end
 
     #problems = (; sp_a, gnep, bilevel_a, bilevel_b, phantom, extract_phantom, OP_a, OP_b, OP_ap, OP_bp, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, β, box_length, box_width, min_long_vel, col_buffer))
-    problems = (; gnep, phantom, extract_phantom, OP_a, OP_b, OP_ap, OP_bp, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, β, box_length, box_width, min_long_vel, col_buffer))
+    problems = (; gnep, phantom, OP_a, OP_b, OP_ap, OP_bp, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, β, box_length, box_width, min_long_vel, col_buffer))
 end
 
 function attempt_solve(prob, init)
@@ -304,25 +297,23 @@ function solve_seq(probs, x0)
     Z = (; Xa, Ua, Xb, Ub, x0a, x0b)
     #show_me(dummy_init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
 
-    phantom_init = zeros(probs.phantom.top_level.n)
-    #phantom_init[probs.phantom.x_inds] = [Xa; Ua; Xb; Ub; Xa; Ua; Xb; Ub]
-    #phantom_init = [phantom_init; x0]
-
     @info "nep"
     gnep_init = zeros(probs.gnep.top_level.n)
     gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub; Xa; Ua; Xb; Ub]
-    #gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
     gnep_init = [gnep_init; x0]
-    success, θ = attempt_solve(probs.gnep, gnep_init)
+    success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
     @info "phantom pain"
+    #@infiltrate
+    phantom_init = zeros(probs.phantom.top_level.n)
+    phantom_init[probs.phantom.x_inds] = [Xa; Ua; Xb; Ub; Xa; Ua; Xb; Ub]
+    phantom_init = [phantom_init; x0]
     phantom_success, θ_phantom = attempt_solve(probs.phantom, phantom_init)
 
     if phantom_success
-        #@info "bilevel success 1"
-        Z = probs.extract_phantom(θ_phantom)
-    else
-        want_gnep = true
+        @info "phantom success"
+        @infiltrate
+        #Z = probs.extract_phantom(θ_phantom)
     end
 
     #@info "Solving gnep.."
@@ -436,15 +427,15 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
         ua = r.U1[1, :]
         ub = r.U2[1, :]
 
-        ua_maxes = accel_bounds_1(xa,
+        ua_maxes = accel_bounds(xa,
             xb,
             probs.params.u_max_nominal,
             probs.params.u_max_drafting,
             probs.params.box_length,
             probs.params.box_width)
 
-        ub_maxes = accel_bounds_2(xa,
-            xb,
+        ub_maxes = accel_bounds(xb,
+            xa,
             probs.params.u_max_nominal,
             probs.params.u_max_drafting,
             probs.params.box_length,

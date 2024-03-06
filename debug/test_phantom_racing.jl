@@ -18,7 +18,6 @@ probs = setup(; T=10,
     box_width=2.0,
     lat_max=2.0);
 
-
 #x0 = [1.0, 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
 
 # sometimes I randomly sample from x0s_2000samples_2024-02-01_1739 -- I call include("racing/process_results.jl") first
@@ -35,5 +34,5 @@ x0 = [1.5966679528041663
 0.0
 2.75401313424805]
 
-sim_results = solve_simulation(probs, 50; x0);
-animate(probs, sim_results; save=false);
+sim_results = solve_simulation(probs, 1; x0);
+#animate(probs, sim_results; save=false);
