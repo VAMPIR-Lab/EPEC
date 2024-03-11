@@ -11,7 +11,7 @@ function animate(probs, sim_results; save=false, filename="test.mp4", sleep_dura
         9 => "Blue: L, Red: F"
         10 => "Blue: F, Red: F"
     ]
-    rad = sqrt(probs.params.r) / 2
+    rad = probs.params.r / 2
     lat = probs.params.lat_max + rad
     (f, ax, XA, XB, lat) = visualize(; rad=rad, lat=lat)
     display(f)

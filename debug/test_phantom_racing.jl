@@ -2,9 +2,17 @@ using EPEC
 using GLMakie
 using Plots
 include("../racing/phantom_racing.jl")
-#include("../racing/racing.jl")
-include("../racing/visualize_racing.jl")
+include("../racing/visualize_phantom_racing.jl")
 
+# todo ... 
+# OP1 -- OP2
+#  |     |
+# OPa   OPb
+
+# modes...
+# gnep: OP1 OP2
+# bilevel: OP1 <- OPa
+# bilevel: OP2 <- OPb
 probs = setup(; T=10,
     Δt=0.1,
     r=1.0,
@@ -35,4 +43,6 @@ x0 = [1.5966679528041663
 2.75401313424805]
 
 sim_results = solve_simulation(probs, 1; x0);
-#animate(probs, sim_results; save=false);
+
+#show_me(probs.extract(θ, probs.gnep.x_inds), x0)
+animate(probs, sim_results; save=false);

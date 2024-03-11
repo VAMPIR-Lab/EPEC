@@ -25,41 +25,48 @@ end
 function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProblem...; use_z_slacks=false)
     @assert length(players_per_row) == 2
     @assert allequal(OP.n for OP in OPs)
-    N1, N2 = players_per_row
-    N = N1 + N2
-    @assert N1 + N2 == length(OPs)
+    N_top, N_low = players_per_row
+    N_all = N_top + N_low
+    @assert N_all == length(OPs)
 
-    n = first(OPs).n
-
-    top_OPs = OPs[1:N1]
-    bot_OPs = OPs[N1+1:end]
+    top_OPs = OPs[1:N_top]
+    low_OPs = OPs[N_top+1:end]
 
     n_privates = [length(OP.dvars) for OP in OPs]
     m_privates = [length(OP.l) for OP in OPs]
+
+    # n = sum(n_privates) + n_param 
+    n = first(OPs).n
     n_param = n - sum(n_privates)
 
-    dim_z_low = sum(n_privates[i] + 2m_privates[i] for i in N1+1:N1+N2; init=0)
-    dim_total = sum(n_privates[i] + 2m_privates[i] + 4 * dim_z_low for i in 1:N1; init=0)
+    dim_z_low = sum(n_privates[i] + 2 * m_privates[i] for i in N_top+1:N_all; init=0)
+    dim_total = sum(n_privates[i] + 2 * m_privates[i] + 4 * dim_z_low for i in 1:N_top; init=0)
 
     # Each top-level player: privates + duals on private cons + slacks on
     # private cons + slacks on z cons + duals on z cons + duals on z agreement
     # + copy of z
-
+    #
+    # θ := [x₁ ... xₙ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
+    # For n players: 
+    # 1. x₁ ... xₙ: privates
+    # 2. z₁ ... zₙ: copy of z
+    # 3. λ₁ ... λₙ: duals on private cons
+    # 4. s₁ ... sₙ: slacks on private cons
+    # 5. ψ₁ ... ψₙ: slacks on z cons
+    # 6, r₁ ... rₙ: duals on z cons
+    # 7. γ₁ ... γₙ: duals on z agreement
     θall = Symbolics.@variables(θ[1:dim_total+n_param])[1] |> Symbolics.scalarize
     θ = θall[1:dim_total]
-    # θ := [x₁ ... xₙ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
     w = θall[dim_total+1:end]
 
-    #θ = Symbolics.@variables(θ[1:dim_total])[1] |> Symbolics.scalarize
-
-    ind = 0
     vars = Dict()
     inds = Dict()
 
+    ind = 0
     for (key_base, len_itr) in zip(["x", "z", "λ", "s", "ψ", "r", "γ"],
         [n_privates, dim_z_low, m_privates, m_privates, dim_z_low, dim_z_low, dim_z_low])
-        lens = length(len_itr) == 1 ? fill(len_itr[1], N1) : len_itr
-        for i in 1:N1
+        lens = length(len_itr) == 1 ? fill(len_itr[1], N_top) : len_itr
+        for i in 1:N_top
             len = lens[i]
             vars[key_base, i] = θ[ind+1:ind+len]
             inds[key_base, i] = ind+1:ind+len
@@ -70,7 +77,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     z = vars["z", 1] # any player's copy of z would do (i.e. z2, z3, ..., or zₙ)
     ind = 0
     for (key_base, len_itr) in zip(["x", "λ", "s"], [n_privates, m_privates, m_privates])
-        for i in N1+1:N1+N2
+        for i in N_top+1:N_all
             len = len_itr[i]
             vars[key_base, i] = z[ind+1:ind+len]
             inds[key_base, i] = inds["z", 1][ind+1:ind+len]
@@ -79,20 +86,20 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     end
     inds["w", 0] = dim_total+1:dim_total+n_param
 
-    x = vcat((vars["x", i] for i in 1:N1+N2)...)
-    x_inds = vcat((inds["x", i] for i in 1:N1+N2)...)
+    x = vcat((vars["x", i] for i in 1:N_all)...)
+    x_inds = vcat((inds["x", i] for i in 1:N_all)...)
     x_w = [x; w]
     x_w_inds = [x_inds; inds["w", 0]]
 
     # construct F for low-level MCP
-    grad_lags = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
+    grad_lags = mapreduce(vcat, N_top+1:N_all; init=Num[]) do i
         Lag = OPs[i].f(x_w) - vars["λ", i]' * OPs[i].g(x_w)
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
     end
-    cons_s = mapreduce(vcat, N1+1:N1+N2; init=Num[]) do i
+    cons_s = mapreduce(vcat, N_top+1:N_all; init=Num[]) do i
         OPs[i].g(x_w) - vars["s", i]
     end
-    λs = vcat((vars["λ", i] for i in N1+1:N1+N2)...)
+    λs = vcat((vars["λ", i] for i in N_top+1:N_all)...)
 
     F = Num[grad_lags; cons_s; λs]
 
@@ -103,7 +110,7 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
 
     l = fill(-Inf, length(grad_lags) + length(cons_s))
     u = fill(+Inf, length(grad_lags) + length(cons_s))
-    for i in N1+1:N1+N2
+    for i in N_top+1:N_all
         append!(l, OPs[i].l)
         append!(u, OPs[i].u)
     end
@@ -112,43 +119,43 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
 
     # reminder :  θ := [x₁ ... xₙ₁ | z₁ ... zₙ | λ₁ ... λₙ | s₁ ... sₙ | ψ₁ ... ψₙ | r₁ ... rₙ | γ₁ ... γₙ] 
 
-    grad_lags_x = mapreduce(vcat, 1:N1) do i
+    grad_lags_x = mapreduce(vcat, 1:N_top) do i
         Lag = OPs[i].f(x_w) - vars["λ", i]' * OPs[i].g(x_w) - vars["ψ", i]' * F
         grad_lag = Symbolics.gradient(Lag, vars["x", i])
     end
-    grad_lags_z = mapreduce(vcat, 1:N1) do i
+    grad_lags_z = mapreduce(vcat, 1:N_top) do i
         Lag = OPs[i].f(x_w) - vars["λ", i]' * OPs[i].g(x_w) - vars["ψ", i]' * F #- vars["γ", i]'*vars["z", 1]
         if use_z_slacks
             Lag -= vars["γ", i]' * vars["z", 1]
         end
         grad_lag = Symbolics.gradient(Lag, vars["z", 1])
     end
-    cons_s_top = mapreduce(vcat, 1:N1) do i
+    cons_s_top = mapreduce(vcat, 1:N_top) do i
         OPs[i].g(x_w) - vars["s", i]
     end
-    λs_top = vcat((vars["λ", i] for i in 1:N1)...)
-    cons_r = mapreduce(vcat, 1:N1) do i
+    λs_top = vcat((vars["λ", i] for i in 1:N_top)...)
+    cons_r = mapreduce(vcat, 1:N_top) do i
         F - vars["r", i]
     end
-    ψs = vcat((vars["ψ", i] for i in 1:N1)...)
-    cons_z = mapreduce(vcat, 1:(N1-1); init=Num[]) do i
+    ψs = vcat((vars["ψ", i] for i in 1:N_top)...)
+    cons_z = mapreduce(vcat, 1:(N_top-1); init=Num[]) do i
         -vars["z", i+1] + vars["z", i]
     end
-    append!(cons_z, sum(vars["γ", i] for i in 1:N1))
+    append!(cons_z, sum(vars["γ", i] for i in 1:N_top))
     #append!(cons_z, -vars["z",1] + vars["z", N1])
 
     Ftotal = [grad_lags_x; grad_lags_z; cons_s_top; λs_top; cons_r; ψs; cons_z]
     ltotal = [fill(-Inf, length(grad_lags_x))
         fill(-Inf, length(grad_lags_z)) # will get overwritten by templates
         fill(-Inf, length(cons_s_top))
-        vcat((OPs[i].l for i in 1:N1)...)
+        vcat((OPs[i].l for i in 1:N_top)...)
         fill(-Inf, length(cons_r))
         fill(-Inf, length(ψs)) # will get overwritten by templates
         fill(-Inf, length(cons_z))]
     utotal = [fill(+Inf, length(grad_lags_x))
         fill(+Inf, length(grad_lags_z)) # will get overwritten by templates
         fill(+Inf, length(cons_s_top))
-        vcat((OPs[i].u for i in 1:N1)...)
+        vcat((OPs[i].u for i in 1:N_top)...)
         fill(+Inf, length(cons_r))
         fill(+Inf, length(ψs)) # will get overwritten by templates
         fill(+Inf, length(cons_z))]
@@ -156,14 +163,14 @@ function create_epec(players_per_row::Tuple{Vararg{Int}}, OPs::OptimizationProbl
     # these are needed for assigning bounds from low-level solutions
     ind = 0
     base = length(grad_lags_x)
-    z_inds_top = map(1:N1) do i
+    z_inds_top = map(1:N_top) do i
         local_inds = ((ind+1):(ind+dim_z_low)) .+ base
         ind += dim_z_low
         local_inds
     end
     ind = 0
     base = length(grad_lags_x) + length(grad_lags_z) + length(cons_s_top) + length(λs_top) + length(cons_r)
-    r_inds_top = map(1:N1) do i
+    r_inds_top = map(1:N_top) do i
         local_inds = ((ind+1):(ind+dim_z_low)) .+ base
         ind += dim_z_low
         local_inds
@@ -308,7 +315,7 @@ function solve_top_level(mcp, bounds, θ, x_inds, inds, f_dict; silent=true)
     )
 
     if status != PATHSolver.MCP_Solved
-        #@infiltrate
+        @infiltrate
         throw(error("Top-level Solver failure"))
     end
 
