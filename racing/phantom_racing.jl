@@ -22,15 +22,17 @@
 # min 	γ * fₐ(τ₁, τᵦ) + (1 - γ) * fₐ(τ₁, τ₂)
 # τ₁,τᵦ
 # 	s.t. 
-#	(1 - γ) * gₐ(τ₁, τ₂) ≥ 0
-#	gₐ(τ₁, τᵦ) ≥ 0
+#	γ * gₐ(τ₁, τᵦ) ≥ 0
+#   (1 - γ) * gₐ(τ₁, τ₂) ≥ 0
 # 	τᵦ ∈ argmin 	fᵦ(τ₁, τᵦ),
 #			τᵦ
 # 		s.t.
 #		gₐ(τ₁, τᵦ) ≥ 0
 #
-# Assume γ=0 -> only Player 1 Vs. Player 2 cost (no phantom cost), all constraints
-# Assume γ=1 -> only Player 1 leader Vs. Phantom 2 follower cost , only phantom constraints
+# Note:
+# γ=0   => only Player 1 Vs. Player 2 cost (no phantom cost), only real constraints
+# 1<γ<1 => all constraints
+# γ=1   => only Player 1 leader Vs. Phantom 2 follower cost , only phantom constraints
 #
 # ---
 # OP2:
@@ -38,15 +40,16 @@
 # min  γ * fᵦ(τₐ, τ₂) + (1 - γ) * fᵦ(τ₁, τ₂) 
 # τₐ,τ₂ 
 # 	s.t. 
+# 	γ * gᵦ(τₐ, τ₂) ≥ 0
 #	(1 - γ) * gᵦ(τ₁, τ₂) ≥ 0
-# 	gᵦ(τₐ, τ₂) ≥ 0
 # 	τₐ ∈ argmin fₐ(τₐ, τ₂),
 #			τₐ
 # 		s.t.	
 # 		gᵦ(τₐ, τ₂) ≥ 0
 #
-# Assume γ=0 -> only Player 2 Vs. Player 1 cost (no phantom cost), all constraints
-# Assume γ=1 -> only Player 2 leader Vs. Phantom 1 follower cost, only phantom constraints
+# γ=0   => only Player 1 Vs. Player 2 cost (no phantom cost), only real constraints
+# 1<γ<1 => all constraints
+# γ=1   => only Player 1 leader Vs. Phantom 2 follower cost , only phantom constraints
 #
 # ---
 # OPa: 
@@ -222,7 +225,7 @@ function fa(z; α1, α2, β)
     f_ego(T, Xa, Ua, X2; α1, α2, β)
 end
 
-function f2(z; α1, α2, β)
+function fb(z; α1, α2, β)
     T, X1, U1, X2, U2, Xa, Ua, Xb, Ub, x01, x02, inds = view_z(z)
     # fᵦ(τ₁, τᵦ)
     f_ego(T, Xb, Ub, X1; α1, α2, β)
@@ -265,18 +268,20 @@ end
 
 function g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ)
     T, X1, U1, X2, U2, Xa, Ua, Xb, Ub, x01, x02, inds = view_z(z)
+    # γ * gₐ(τ₁, τᵦ) ≥ 0
     # (1 - γ) * gₐ(τ₁, τ₂) ≥ 0
-    # gₐ(τ₁, τᵦ) ≥ 0
-    [(1 - γ) .* g_ego(X1, U1, X2, x01; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-        g_ego(X1, U1, Xb, x01; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
+
+    [γ .* g_ego(X1, U1, Xb, x01; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+        (1.0 - γ) .* g_ego(X1, U1, X2, x01; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
 end
 
 function g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ)
     T, X1, U1, X2, U2, Xa, Ua, Xb, Ub, x01, x02, inds = view_z(z)
+    # γ * gᵦ(τₐ, τ₂) ≥ 0
     # (1 - γ) * gᵦ(τ₁, τ₂) ≥ 0
-    # gᵦ(τₐ, τ₂) ≥ 0
-    [(1 - γ) .* g_ego(X2, U2, X1, x02; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-        g_ego(X2, U2, Xa, x02; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
+
+    [γ .* g_ego(X2, U2, Xa, x02; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+        (1.0 - γ) .* g_ego(X2, U2, X1, x02; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
 end
 
 function ga(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
@@ -310,40 +315,36 @@ function setup(; T=10,
     xdim = 4
     udim = 2
 
-    f1_pinned = (z -> f1(z; α1, α2, β, γ))
-    f2_pinned = (z -> f2(z; α1, α2, β, γ))
-    fa_pinned = (z -> fa(z; α1, α2, β))
-    fb_pinned = (z -> fb(z; α1, α2, β))
-    g1_pinned = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ))
-    g2_pinned = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ))
-    ga_pinned = (z -> ga(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
-    gb_pinned = (z -> gb(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
-    f1_bilevel = (z -> f1(z; α1, α2, β, γ=1.0))
-    f2_bilevel = (z -> f2(z; α1, α2, β, γ=1.0))
-    g1_bilevel = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ=1.0))
-    g2_bilevel = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ=1.0))
-
     lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-u_max_braking, T); fill(min_long_vel, T); fill(-lat_max, T)]
     ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(Inf, T); fill(+lat_max, T)]
     lb_all = [lb; lb]
     ub_all = [ub; ub]
 
-    OP1 = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f1_pinned, g1_pinned, lb_all, ub_all)
-    OP2 = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f2_pinned, g2_pinned, lb_all, ub_all)
-    OPa = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, fa_pinned, ga_pinned, lb, ub)
-    OPb = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, fb_pinned, gb_pinned, lb, ub)
-    OP1_bilevel = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f1_bilevel, g1_bilevel, lb_all, ub_all)
-    OP2_bilevel = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f2_bilevel, g2_bilevel, lb_all, ub_all)
-    # modes:
     # 1. gnep: 
     #	OPₐ		OPᵦ
-    gnep = [OPa OPb]
+    f1_γ0 = (z -> f1(z; α1, α2, β, γ=0.0))
+    f2_γ0 = (z -> f2(z; α1, α2, β, γ=0.0))
+    g1_γ0 = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ=0.0))
+    g2_γ0 = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ=0.0))
+
+    OP1_γ0 = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f1_γ0, g1_γ0, lb_all, ub_all)
+    OP2_γ0 = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f2_γ0, g2_γ0, lb_all, ub_all)
+
+    @infiltrate
+    gnep = [OP1_γ0 OP2_γ0]
 
     # 2. bilevel 1 (γ=1):
     #	OP₁	
     #	|
     #	OPᵦ
-    bilevel1 = [OP1_bilevel; OPb]
+    f1_γ1 = (z -> f1(z; α1, α2, β, γ=1.0))
+    f2_γ1 = (z -> f2(z; α1, α2, β, γ=1.0))
+    g1_γ1 = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ=1.0))
+    g2_γ1 = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ=1.0))
+
+    OP1_γ1 = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f1_γ1, g1_γ1, lb_all, ub_all)
+
+    bilevel1 = [OP1_γ1; OPb]
 
     # 3. bilevel 2 (γ=1):
     #	OP₂
@@ -355,11 +356,26 @@ function setup(; T=10,
     #	OP₁		OP₂
     #	|		|
     #	OPᵦ		OPₐ 
+    f1_pinned = (z -> f1(z; α1, α2, β, γ))
+    f2_pinned = (z -> f2(z; α1, α2, β, γ))
+    g1_pinned = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ))
+    g2_pinned = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ))
+
+    fa_pinned = (z -> fa(z; α1, α2, β))
+    fb_pinned = (z -> fb(z; α1, α2, β))
+    ga_pinned = (z -> ga(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    gb_pinned = (z -> gb(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+
+    OP1 = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f1_pinned, g1_pinned, lb_all, ub_all)
+    OP2 = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, f2_pinned, g2_pinned, lb_all, ub_all)
+    OPa = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, fa_pinned, ga_pinned, lb, ub)
+    OPb = OptimizationProblem(4 * (xdim + udim) * T + 2 * xdim, 1:(xdim+udim)*T, fb_pinned, gb_pinned, lb, ub)
+
     phantom = EPEC.create_epec((2, 2), OP1, OP2, OPa, OPb) # order is fixed
 
     function extract(θ, x_inds)
         z = θ[x_inds]
-		T, X1, U1, X2, U2, Xa, Ua, Xb, Ub, x01, x02, inds = view_z([z; zeros(2 * xdim)])
+        T, X1, U1, X2, U2, Xa, Ua, Xb, Ub, x01, x02, inds = view_z([z; zeros(2 * xdim)])
         (; X1, U1, X2, U2, Xa, Ua, Xb, Ub)
     end
 
@@ -408,29 +424,29 @@ function solve_seq(probs, x0)
     dummy_init = [Xa; Ua; Xb; Ub]
     Z = (; Xa, Ua, Xb, Ub, x0a, x0b)
 
-	
+
     @info "gnep"
     gnep_init = zeros(probs.gnep.top_level.n)
     gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
     gnep_init = [gnep_init; x0]
     gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
-	@info "phantom pain"
+    @info "phantom pain"
     phantom_init = zeros(probs.phantom.top_level.n)
     phantom_init[probs.phantom.x_inds] = [Xa; Ua; Xb; Ub; Xa; Ua; Xb; Ub]
     phantom_init = [phantom_init; x0]
 
     if (gnep_success)
-		phantom_init[probs.phantom.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
-		phantom_init[probs.phantom.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
-		phantom_init[probs.phantom.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
-		phantom_init[probs.phantom.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-		phantom_init[probs.phantom.inds["λ", 3]] = θ_gnep[probs.gnep.inds["λ", 2]]
-		phantom_init[probs.phantom.inds["s", 3]] = θ_gnep[probs.gnep.inds["s", 2]]
-		phantom_init[probs.phantom.inds["λ", 4]] = θ_gnep[probs.gnep.inds["λ", 1]]
-		phantom_init[probs.phantom.inds["s", 4]] = θ_gnep[probs.gnep.inds["s", 1]]
+        phantom_init[probs.phantom.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
+        phantom_init[probs.phantom.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
+        phantom_init[probs.phantom.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
+        phantom_init[probs.phantom.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
+        phantom_init[probs.phantom.inds["λ", 3]] = θ_gnep[probs.gnep.inds["λ", 2]]
+        phantom_init[probs.phantom.inds["s", 3]] = θ_gnep[probs.gnep.inds["s", 2]]
+        phantom_init[probs.phantom.inds["λ", 4]] = θ_gnep[probs.gnep.inds["λ", 1]]
+        phantom_init[probs.phantom.inds["s", 4]] = θ_gnep[probs.gnep.inds["s", 1]]
     end
-  
+
     phantom_success, θ_phantom = attempt_solve(probs.phantom, phantom_init)
     show_me(probs.extract(θ_phantom, probs.phantom.x_inds), x0)
 
