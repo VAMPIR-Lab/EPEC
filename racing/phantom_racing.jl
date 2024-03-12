@@ -1,51 +1,75 @@
-# OP₁	OP₂
-#  |	|
-# OPᵦ   OPₐ 
-# ---
-# Information:
-# τ₂, OPᵦ -> OP₁
-# τ₁, OPₐ -> OP₂
-# τ₂ -> OPₐ
-# τ₁ -> OPᵦ
+# 2 players: A, B
+# corresponding phantoms: a, b
 #
+## 1. gnep: 
+#   OP-A     OP-B
+#
+## 2. A-leader:
+#   OP-A 
+#    |
+#   OP-B
+#
+## 3. B-leader:
+#   OP-B
+#    |
+#   OP-A
+#
+## 3. only b-phantom:
+#   OP-A     OP-B
+#    |
+#   OP-b
+#
+## 4. only a-phantom:
+#   OP-A    OP-B
+#            |
+#           OP-a
+#
+## 5. phantom horseshoe:
+#	OP-A	OP-B
+#	 |		 |
+#	OP-b	OP-a 
 # ---
+#
 # Trajectories:
 # τ₁ of OP₁: player 1
 # τ₂ of OP₂: player 2
 # τₐ of OPᵦ: phantom of player 1
 # τᵦ of OPₐ: phantom of player 2
+#
 # γ∈[0,1]: phantom cost ratio
 # ---
-# OP1: 
+#
+## OP1: 
 #
 # min 	γ * fₐ(τ₁, τᵦ) + (1 - γ) * fₐ(τ₁, τ₂)
 # τ₁,τᵦ
 # 	s.t. 
-#	γ * gₐ(τ₁, τᵦ) ≥ 0
-#   (1 - γ) * gₐ(τ₁, τ₂) ≥ 0
-# 	τᵦ ∈ argmin 	fᵦ(τ₁, τᵦ),
-#			τᵦ
-# 		s.t.
-#		gₐ(τ₁, τᵦ) ≥ 0
+#	    γ * gₐ(τ₁, τᵦ) ≥ 0
+#       (1 - γ) * gₐ(τ₁, τ₂) ≥ 0
+# 	    τᵦ ∈ argmin 	fᵦ(τ₁, τᵦ),
+#			    τᵦ
+# 		    s.t.
+#		        gₐ(τ₁, τᵦ) ≥ 0
 #
-# Note:
+## Note:
 # γ=0   => only Player 1 Vs. Player 2 cost (no phantom cost), only real constraints
 # 1<γ<1 => all constraints
 # γ=1   => only Player 1 leader Vs. Phantom 2 follower cost , only phantom constraints
-#
 # ---
-# OP2:
+#
+## OP2:
 #
 # min  γ * fᵦ(τₐ, τ₂) + (1 - γ) * fᵦ(τ₁, τ₂) 
 # τₐ,τ₂ 
 # 	s.t. 
-# 	γ * gᵦ(τₐ, τ₂) ≥ 0
-#	(1 - γ) * gᵦ(τ₁, τ₂) ≥ 0
-# 	τₐ ∈ argmin fₐ(τₐ, τ₂),
-#			τₐ
-# 		s.t.	
-# 		gᵦ(τₐ, τ₂) ≥ 0
+# 	    γ * gᵦ(τₐ, τ₂) ≥ 0
+#	    (1 - γ) * gᵦ(τ₁, τ₂) ≥ 0
+# 	    τₐ ∈ argmin fₐ(τₐ, τ₂),
+#			    τₐ
+# 		    s.t.	
+# 		        gᵦ(τₐ, τ₂) ≥ 0
 #
+## Note:
 # γ=0   => only Player 1 Vs. Player 2 cost (no phantom cost), only real constraints
 # 1<γ<1 => all constraints
 # γ=1   => only Player 1 leader Vs. Phantom 2 follower cost , only phantom constraints
@@ -67,24 +91,6 @@
 # 	gᵦ(τ₁, τᵦ) ≥ 0
 #
 # ---
-# modes:
-# 1. gnep: 
-#	OPₐ		OPᵦ
-#
-# 2. bilevel 1 (γ=1):
-#	OP₁	
-#	|
-#	OPᵦ
-#
-# 3. bilevel 2 (γ=1):
-#	OP₂
-#	|
-#	OPₐ
-#
-# 4. phantom (γ<1):
-#	OP₁		OP₂
-#	|		|
-#	OPᵦ		OPₐ 
 
 ###################
 # z decomposition #
@@ -101,7 +107,7 @@
 # tdim: number of time steps
 
 # 2 real players
-function view_z_12(z)
+function view_z_2(z)
     pdim = 2
     xdim = 4
     udim = 2
@@ -111,7 +117,7 @@ function view_z_12(z)
     idx = 0
     for (len, name) in zip(
         [xdim * T, udim * T, xdim * T, udim * T, xdim, xdim],
-        ["X1", "U1", "X2", "U2", "x01", "x02"])
+        ["X1", "U1", "X2", "U2", "x0_1", "x0_2"])
         inds[name] = (idx+1):(idx+len)
         idx += len
     end
@@ -125,7 +131,7 @@ function view_z_12(z)
 end
 
 # 2 real players, 1 phantom
-function view_z_12a(z)
+function view_z_3(z)
     pdim = 3
     xdim = 4
     udim = 2
@@ -151,7 +157,7 @@ function view_z_12a(z)
 end
 
 # 2 real players, 2 phantoms
-function view_z_12ab(z)
+function view_z_4(z)
     pdim = 4
     xdim = 4
     udim = 2
@@ -298,8 +304,13 @@ end
 ###########
 # f and g #
 ###########
-# gnep: 
+# gnep 12: 
 #	OPₐ		OPᵦ
+
+# bilevel 12: 
+#	OPₐ		
+#    |
+#   OPᵦ
 
 # fₐ(τ₁, τ₂)
 function fa_12(z; α1, α2, β)
@@ -328,24 +339,24 @@ function gb_12(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_wid
 end
 
 # 2. bilevel 1 (γ=1):
-#	OP₁	
+#	OP₁
 #	|
 #	OPᵦ
 
 # γ * fₐ(τ₁, τᵦ) + (1 - γ) * fₐ(τ₁, τ₂)
-function f1_12ab(z; α1, α2, β, γ)
-    X1, U1, X2, U2, Xa, Ua, Xb, Ub, x0_1, x0_2 = view_z_12ab(z)
+function f1_1b(z; α1, α2, β, γ)
+    X1, U1, X2, U2, x0_1, x0_2, T, inds = view_z_12(z)
     γ * f_ego(X1, U1, Xb; α1, α2, β) + (1.0 - γ) * f_ego(X1, U1, X2; α1, α2, β)
 end
 
 # γ * fᵦ(τₐ, τ₂) + (1 - γ) * fᵦ(τ₁, τ₂) 
-function f2_12ab(z; α1, α2, β, γ)
+function fb_1b(z; α1, α2, β, γ)
     X1, U1, X2, U2, Xa, Ua, Xb, Ub, x0_1, x0_2 = view_z_12ab(z)
     γ * f_ego(X2, U2, Xa; α1, α2, β) + (1.0 - γ) * f_ego(X2, U2, X1; α1, α2, β)
 end
 
 # fₐ(τₐ, τ₂)
-function fa_12ab(z; α1, α2, β)
+function fa_12a(z; α1, α2, β)
     X1, U1, X2, U2, Xa, Ua, Xb, Ub, x0_1, x0_2 = view_z_12ab(z)
     f_ego(T, Xa, Ua, X2; α1, α2, β)
 end
