@@ -44,55 +44,55 @@ function visualize(; T=10, rad=0.5, lat_max=2.5)
     GLMakie.lines!(ax, [-lat_max, -lat_max], [-10.0, 1000.0], color=:black)
     GLMakie.lines!(ax, [+lat_max, +lat_max], [-10.0, 1000.0], color=:black)
 
-    XA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
-    XB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
-    XAp = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
-    XBp = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    X1 = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    X2 = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    Xa = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    Xb = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
 
     circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
     circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
-    GLMakie.lines!(ax, @lift(circ_x .+ $(XA[0][1])), @lift(circ_y .+ $(XA[0][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=.75)
-    GLMakie.lines!(ax, @lift(circ_x .+ $(XB[0][1])), @lift(circ_y .+ $(XB[0][2])), color=:red, linewidth=2, linestyle=:dash, alpha=.75)
-    GLMakie.lines!(ax, @lift(circ_x .+ $(XAp[0][1])), @lift(circ_y .+ $(XAp[0][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=.75)
-    GLMakie.lines!(ax, @lift(circ_x .+ $(XBp[0][1])), @lift(circ_y .+ $(XBp[0][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=.75)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(X1[0][1])), @lift(circ_y .+ $(X1[0][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=.75)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(X2[0][1])), @lift(circ_y .+ $(X2[0][2])), color=:red, linewidth=2, linestyle=:dash, alpha=.75)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(Xa[0][1])), @lift(circ_y .+ $(Xa[0][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=.75)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(Xb[0][1])), @lift(circ_y .+ $(Xb[0][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=.75)
 
-    a_rot = map(atan, @lift(($(XA[0][2]) - $(XA[1][2]))), @lift(($(XA[0][1]) - $(XA[1][1]))))
-    b_rot = map(atan, @lift(($(XB[0][2]) - $(XB[1][2]))), @lift(($(XB[0][1]) - $(XB[1][1]))))
-    ap_rot = map(atan, @lift(($(XAp[0][2]) - $(XAp[1][2]))), @lift(($(XAp[0][1]) - $(XAp[1][1]))))
-    bp_rot = map(atan, @lift(($(XBp[0][2]) - $(XBp[1][2]))), @lift(($(XBp[0][1]) - $(XBp[1][1]))))
+    rot1 = map(atan, @lift(($(X1[0][2]) - $(X1[1][2]))), @lift(($(X1[0][1]) - $(X1[1][1]))))
+    rot2 = map(atan, @lift(($(X2[0][2]) - $(X2[1][2]))), @lift(($(X2[0][1]) - $(X2[1][1]))))
+    rota = map(atan, @lift(($(Xa[0][2]) - $(Xa[1][2]))), @lift(($(Xa[0][1]) - $(Xa[1][1]))))
+    rotb = map(atan, @lift(($(Xb[0][2]) - $(Xb[1][2]))), @lift(($(Xb[0][1]) - $(Xb[1][1]))))
 
 
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XA[0][1])), @lift([0.0, 0.0] .+ $(XA[0][2])), rotations=@lift($(a_rot) .+ pi), marker=carsymbol, markersize=80, color=:blue, alpha=.75)
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XB[0][1])), @lift([0.0, 0.0] .+ $(XB[0][2])), rotations=@lift($(b_rot) .+ pi), marker=carsymbol, markersize=80, color=:red, alpha=.75)
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XAp[0][1])), @lift([0.0, 0.0] .+ $(XAp[0][2])), rotations=@lift($(ap_rot) .+ pi), marker=carsymbol, markersize=80, color=:lightblue, alpha=.75)
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XBp[0][1])), @lift([0.0, 0.0] .+ $(XBp[0][2])), rotations=@lift($(bp_rot) .+ pi), marker=carsymbol, markersize=80, color=:pink, alpha=.75)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(X1[0][1])), @lift([0.0, 0.0] .+ $(X1[0][2])), rotations=@lift($(rot1) .+ pi), marker=carsymbol, markersize=80, color=:blue, alpha=.75)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(X2[0][1])), @lift([0.0, 0.0] .+ $(X2[0][2])), rotations=@lift($(rot2) .+ pi), marker=carsymbol, markersize=80, color=:red, alpha=.75)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(Xa[0][1])), @lift([0.0, 0.0] .+ $(Xa[0][2])), rotations=@lift($(rota) .+ pi), marker=carsymbol, markersize=80, color=:lightblue, alpha=.75)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(Xb[0][1])), @lift([0.0, 0.0] .+ $(Xb[0][2])), rotations=@lift($(rotb) .+ pi), marker=carsymbol, markersize=80, color=:pink, alpha=.75)
 
     for t in 1:T
-        GLMakie.lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=.75)
-        GLMakie.lines!(ax, @lift(circ_x .+ $(XB[t][1])), @lift(circ_y .+ $(XB[t][2])), color=:red, linewidth=2, linestyle=:dash, alpha=.75)
-        GLMakie.lines!(ax, @lift(circ_x .+ $(XAp[t][1])), @lift(circ_y .+ $(XAp[t][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=.75)
-        GLMakie.lines!(ax, @lift(circ_x .+ $(XBp[t][1])), @lift(circ_y .+ $(XBp[t][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=.75)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(X1[t][1])), @lift(circ_y .+ $(X1[t][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=.75)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(X2[t][1])), @lift(circ_y .+ $(X2[t][2])), color=:red, linewidth=2, linestyle=:dash, alpha=.75)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(Xa[t][1])), @lift(circ_y .+ $(Xa[t][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=.75)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(Xb[t][1])), @lift(circ_y .+ $(Xb[t][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=.75)
     end
 
-    function update(PA, PB, PAp, PBp, x0)
-        XA[0][1][] = x0[1]
-        XA[0][2][] = x0[2]
-        XB[0][1][] = x0[5]
-        XB[0][2][] = x0[6]
-        XAp[0][1][] = x0[1]
-        XAp[0][2][] = x0[2]
-        XBp[0][1][] = x0[5]
-        XBp[0][2][] = x0[6]
+    function update(P1, P2, Pa, Pb, x0)
+        X1[0][1][] = x0[1]
+        X1[0][2][] = x0[2]
+        X2[0][1][] = x0[5]
+        X2[0][2][] = x0[6]
+        Xa[0][1][] = x0[1]
+        Xa[0][2][] = x0[2]
+        Xb[0][1][] = x0[5]
+        Xb[0][2][] = x0[6]
     
         for l in 1:T
-            XA[l][1][] = PA[l, 1]
-            XA[l][2][] = PA[l, 2]
-            XB[l][1][] = PB[l, 1]
-            XB[l][2][] = PB[l, 2]
-            XAp[l][1][] = PAp[l, 1]
-            XAp[l][2][] = PAp[l, 2]
-            XBp[l][1][] = PBp[l, 1]
-            XBp[l][2][] = PBp[l, 2]
+            X1[l][1][] = P1[l, 1]
+            X1[l][2][] = P1[l, 2]
+            X2[l][1][] = P2[l, 1]
+            X2[l][2][] = P2[l, 2]
+            Xa[l][1][] = Pa[l, 1]
+            Xa[l][2][] = Pa[l, 2]
+            Xb[l][1][] = Pb[l, 1]
+            Xb[l][2][] = Pb[l, 2]
         end
 
         GLMakie.xlims!(ax, -lat_max, lat_max)
@@ -107,12 +107,12 @@ function show_me(Z, x0; T=10, t=0, lat_max=2.5)
     (f, ax, update) = visualize(; T, lat_max)
     display(f)
 
-    PA = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
-    PB = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
-    PAp = [Z.Xap[1:4:end] Z.Xap[2:4:end] Z.Xap[3:4:end] Z.Xap[4:4:end]]
-    PBp = [Z.Xbp[1:4:end] Z.Xbp[2:4:end] Z.Xbp[3:4:end] Z.Xbp[4:4:end]]
+    PA = [Z.X1[1:4:end] Z.X1[2:4:end] Z.X1[3:4:end] Z.X1[4:4:end]]
+    PB = [Z.X2[1:4:end] Z.X2[2:4:end] Z.X2[3:4:end] Z.X2[4:4:end]]
+    PAp = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
+    PBp = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
 
-    update(PA, PB, PAp, PBp, x0)
+    update(P1, P2, Pa, Pb, x0)
 
     if t > 0
         ax.title = string(t)
