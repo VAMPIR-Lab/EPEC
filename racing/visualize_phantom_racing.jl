@@ -1,39 +1,3 @@
-function animate(probs, sim_results; save=false, filename="test.mp4", sleep_duration=1e-2, mode=1)
-    mode_str = [
-        1 => "Blue: S, Red: S"
-        2 => "Blue: S, Red: N"
-        3 => "Blue: N, Red: N"
-        4 => "Blue: S, Red: L"
-        5 => "Blue: N, Red: L"
-        6 => "Blue: L, Red: L"
-        7 => "Blue: S, Red: F"
-        8 => "Blue: N, Red: F"
-        9 => "Blue: L, Red: F"
-        10 => "Blue: F, Red: F"
-    ]
-    rad = probs.params.r / 2
-    lat = probs.params.lat_max + rad
-    (f, ax, update) = visualize(; rad=rad, lat_max=lat)
-    display(f)
-    T = length(sim_results)
-
-    if save
-        # extra 5 frames at the end because powerpoint is being weird
-        record(f, filename, 1:T+10; framerate=10) do t
-            if t <= T
-                update(sim_results[t].PA, sim_results[t].PB, sim_results[t].PAp, sim_results[t].PBp, sim_results[t].x0)
-                ax.title = "$(mode_str[mode][2])\nTime step = $(string(t))"
-            end
-        end
-    else
-        for t in 1:T
-            update(sim_results[t].PA, sim_results[t].PB, sim_results[t].PAp, sim_results[t].PBp, sim_results[t].x0)
-            ax.title = "$(mode_str[mode][2])\nTime step = $(string(t))"
-            sleep(sleep_duration)
-        end
-    end
-end
-
 function visualize(; T=10, rad=0.5, lat_max=2.5)
     f = Figure(resolution=(500, 1000), grid=false)
     ax = Axis(f[1, 1], aspect=DataAspect())
@@ -44,55 +8,100 @@ function visualize(; T=10, rad=0.5, lat_max=2.5)
     GLMakie.lines!(ax, [-lat_max, -lat_max], [-10.0, 1000.0], color=:black)
     GLMakie.lines!(ax, [+lat_max, +lat_max], [-10.0, 1000.0], color=:black)
 
-    X1 = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
-    X2 = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
-    Xa = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
-    Xb = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    PA = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    PB = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    Pa = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
+    Pb = Dict(t => [Observable(0.0), Observable(0.0)] for t in 0:T)
 
     circ_x = [rad * cos(t) for t in 0:0.1:(2π+0.1)]
     circ_y = [rad * sin(t) for t in 0:0.1:(2π+0.1)]
-    GLMakie.lines!(ax, @lift(circ_x .+ $(X1[0][1])), @lift(circ_y .+ $(X1[0][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=.75)
-    GLMakie.lines!(ax, @lift(circ_x .+ $(X2[0][1])), @lift(circ_y .+ $(X2[0][2])), color=:red, linewidth=2, linestyle=:dash, alpha=.75)
-    GLMakie.lines!(ax, @lift(circ_x .+ $(Xa[0][1])), @lift(circ_y .+ $(Xa[0][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=.75)
-    GLMakie.lines!(ax, @lift(circ_x .+ $(Xb[0][1])), @lift(circ_y .+ $(Xb[0][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=.75)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(PA[0][1])), @lift(circ_y .+ $(PA[0][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=0.9)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(PB[0][1])), @lift(circ_y .+ $(PB[0][2])), color=:red, linewidth=2, linestyle=:dash, alpha=0.9)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(Pa[0][1])), @lift(circ_y .+ $(Pa[0][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=0.9)
+    GLMakie.lines!(ax, @lift(circ_x .+ $(Pb[0][1])), @lift(circ_y .+ $(Pb[0][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=0.9)
 
-    rot1 = map(atan, @lift(($(X1[0][2]) - $(X1[1][2]))), @lift(($(X1[0][1]) - $(X1[1][1]))))
-    rot2 = map(atan, @lift(($(X2[0][2]) - $(X2[1][2]))), @lift(($(X2[0][1]) - $(X2[1][1]))))
-    rota = map(atan, @lift(($(Xa[0][2]) - $(Xa[1][2]))), @lift(($(Xa[0][1]) - $(Xa[1][1]))))
-    rotb = map(atan, @lift(($(Xb[0][2]) - $(Xb[1][2]))), @lift(($(Xb[0][1]) - $(Xb[1][1]))))
+    rot1 = map(atan, @lift(($(PA[0][2]) - $(PA[1][2]))), @lift(($(PA[0][1]) - $(PA[1][1]))))
+    rot2 = map(atan, @lift(($(PB[0][2]) - $(PB[1][2]))), @lift(($(PB[0][1]) - $(PB[1][1]))))
+    rota = map(atan, @lift(($(Pa[0][2]) - $(Pa[1][2]))), @lift(($(Pa[0][1]) - $(Pa[1][1]))))
+    rotb = map(atan, @lift(($(Pb[0][2]) - $(Pb[1][2]))), @lift(($(Pb[0][1]) - $(Pb[1][1]))))
 
 
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(X1[0][1])), @lift([0.0, 0.0] .+ $(X1[0][2])), rotations=@lift($(rot1) .+ pi), marker=carsymbol, markersize=80, color=:blue, alpha=.75)
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(X2[0][1])), @lift([0.0, 0.0] .+ $(X2[0][2])), rotations=@lift($(rot2) .+ pi), marker=carsymbol, markersize=80, color=:red, alpha=.75)
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(Xa[0][1])), @lift([0.0, 0.0] .+ $(Xa[0][2])), rotations=@lift($(rota) .+ pi), marker=carsymbol, markersize=80, color=:lightblue, alpha=.75)
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(Xb[0][1])), @lift([0.0, 0.0] .+ $(Xb[0][2])), rotations=@lift($(rotb) .+ pi), marker=carsymbol, markersize=80, color=:pink, alpha=.75)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(PA[0][1])), @lift([0.0, 0.0] .+ $(PA[0][2])), rotations=@lift($(rot1) .+ pi), marker=carsymbol, markersize=80, color=:blue, alpha=0.9)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(PB[0][1])), @lift([0.0, 0.0] .+ $(PB[0][2])), rotations=@lift($(rot2) .+ pi), marker=carsymbol, markersize=80, color=:red, alpha=0.9)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(Pa[0][1])), @lift([0.0, 0.0] .+ $(Pa[0][2])), rotations=@lift($(rota) .+ pi), marker=carsymbol, markersize=80, color=:lightblue, alpha=0.9)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(Pb[0][1])), @lift([0.0, 0.0] .+ $(Pb[0][2])), rotations=@lift($(rotb) .+ pi), marker=carsymbol, markersize=80, color=:pink, alpha=0.9)
 
     for t in 1:T
-        GLMakie.lines!(ax, @lift(circ_x .+ $(X1[t][1])), @lift(circ_y .+ $(X1[t][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=.75)
-        GLMakie.lines!(ax, @lift(circ_x .+ $(X2[t][1])), @lift(circ_y .+ $(X2[t][2])), color=:red, linewidth=2, linestyle=:dash, alpha=.75)
-        GLMakie.lines!(ax, @lift(circ_x .+ $(Xa[t][1])), @lift(circ_y .+ $(Xa[t][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=.75)
-        GLMakie.lines!(ax, @lift(circ_x .+ $(Xb[t][1])), @lift(circ_y .+ $(Xb[t][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=.75)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(PA[t][1])), @lift(circ_y .+ $(PA[t][2])), color=:blue, linewidth=2, linestyle=:dash, alpha=0.9)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(PB[t][1])), @lift(circ_y .+ $(PB[t][2])), color=:red, linewidth=2, linestyle=:dash, alpha=0.9)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(Pa[t][1])), @lift(circ_y .+ $(Pa[t][2])), color=:lightblue, linewidth=2, linestyle=:dot, alpha=0.9)
+        GLMakie.lines!(ax, @lift(circ_x .+ $(Pb[t][1])), @lift(circ_y .+ $(Pb[t][2])), color=:pink, linewidth=2, linestyle=:dot, alpha=0.9)
     end
 
-    function update(P1, P2, Pa, Pb, x0)
-        X1[0][1][] = x0[1]
-        X1[0][2][] = x0[2]
-        X2[0][1][] = x0[5]
-        X2[0][2][] = x0[6]
-        Xa[0][1][] = x0[1]
-        Xa[0][2][] = x0[2]
-        Xb[0][1][] = x0[5]
-        Xb[0][2][] = x0[6]
-    
+
+    function update(XA, XB, x0)
+        xdim = 4
+        udim = 2
+        x0A = x0[1:xdim]
+        x0B = x0[xdim+1:2*xdim]
+        XXA = [XA[1:4:end] XA[2:4:end] XA[3:4:end] XA[4:4:end]]
+        XXB = [XB[1:4:end] XB[2:4:end] XB[3:4:end] XB[4:4:end]]
+        XXa = [XA[1:4:end] XA[2:4:end] XA[3:4:end] XA[4:4:end]]
+        XXb = [XB[1:4:end] XB[2:4:end] XB[3:4:end] XB[4:4:end]]
+
+        PA[0][1][] = x0A[1]
+        PA[0][2][] = x0A[2]
+        PB[0][1][] = x0B[1]
+        PB[0][2][] = x0B[2]
+        Pa[0][1][] = x0A[1]
+        Pa[0][2][] = x0A[2]
+        Pb[0][1][] = x0B[1]
+        Pb[0][2][] = x0B[2]
+
         for l in 1:T
-            X1[l][1][] = P1[l, 1]
-            X1[l][2][] = P1[l, 2]
-            X2[l][1][] = P2[l, 1]
-            X2[l][2][] = P2[l, 2]
-            Xa[l][1][] = Pa[l, 1]
-            Xa[l][2][] = Pa[l, 2]
-            Xb[l][1][] = Pb[l, 1]
-            Xb[l][2][] = Pb[l, 2]
+            PA[l][1][] = XXA[l, 1]
+            PA[l][2][] = XXA[l, 2]
+            PB[l][1][] = XXB[l, 1]
+            PB[l][2][] = XXB[l, 2]
+            Pa[l][1][] = XXa[l, 1]
+            Pa[l][2][] = XXa[l, 2]
+            Pb[l][1][] = XXb[l, 1]
+            Pb[l][2][] = XXb[l, 2]
+        end
+
+        GLMakie.xlims!(ax, -lat_max, lat_max)
+        avg_y_pos = (x0[2] + x0[6]) / 2
+        GLMakie.ylims!(ax, avg_y_pos - lat_max, avg_y_pos + 3 * lat_max)
+    end
+
+    function update(XA, XB, Xa, Xb, x0)
+        xdim = 4
+        udim = 2
+        x0A = x0[1:xdim]
+        x0B = x0[xdim+1:2*xdim]
+        PA[0][1][] = x0A[1]
+        PA[0][2][] = x0A[2]
+        PB[0][1][] = x0B[1]
+        PB[0][2][] = x0B[2]
+        Pa[0][1][] = x0A[1]
+        Pa[0][2][] = x0A[2]
+        Pb[0][1][] = x0B[1]
+        Pb[0][2][] = x0B[2]
+
+        XXA = [XA[1:4:end] XA[2:4:end] XA[3:4:end] XA[4:4:end]]
+        XXB = [XB[1:4:end] XB[2:4:end] XB[3:4:end] XB[4:4:end]]
+        XXa = [Xa[1:4:end] Xa[2:4:end] Xa[3:4:end] Xa[4:4:end]]
+        XXb = [Xb[1:4:end] Xb[2:4:end] Xb[3:4:end] Xb[4:4:end]]
+
+        for l in 1:T
+            PA[l][1][] = XXA[l, 1]
+            PA[l][2][] = XXA[l, 2]
+            PB[l][1][] = XXB[l, 1]
+            PB[l][2][] = XXB[l, 2]
+            Pa[l][1][] = XXa[l, 1]
+            Pa[l][2][] = XXa[l, 2]
+            Pb[l][1][] = XXb[l, 1]
+            Pb[l][2][] = XXb[l, 2]
         end
 
         GLMakie.xlims!(ax, -lat_max, lat_max)
@@ -103,18 +112,55 @@ function visualize(; T=10, rad=0.5, lat_max=2.5)
     (f, ax, update)
 end
 
-function show_me(Z, x0; T=10, t=0, lat_max=2.5)
+function show_me(XA, XB, x0; T=10, t=0, lat_max=2.5)
     (f, ax, update) = visualize(; T, lat_max)
     display(f)
-
-    PA = [Z.X1[1:4:end] Z.X1[2:4:end] Z.X1[3:4:end] Z.X1[4:4:end]]
-    PB = [Z.X2[1:4:end] Z.X2[2:4:end] Z.X2[3:4:end] Z.X2[4:4:end]]
-    PAp = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
-    PBp = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
-
-    update(P1, P2, Pa, Pb, x0)
+    update(XA, XB, x0)
 
     if t > 0
         ax.title = string(t)
+    end
+end
+
+function show_me(XA, XB, Xa, Xb, x0; T=10, t=0, lat_max=2.5)
+    (f, ax, update) = visualize(; T, lat_max)
+    display(f)
+
+    update(XA, XB, Xa, Xb, x0)
+
+    if t > 0
+        ax.title = string(t)
+    end
+end
+
+function animate(probs, sim_results; save=false, filename="test.mp4", sleep_duration=1e-2, update_phantoms=false)
+    rad = probs.params.r / 2
+    lat = probs.params.lat_max + rad
+    (f, ax, update) = visualize(; rad=rad, lat_max=lat)
+    display(f)
+    T = length(sim_results)
+
+    if save
+        # extra 5 frames at the end because powerpoint is being weird
+        record(f, filename, 1:T+10; framerate=10) do t
+            if t <= T
+                if update_phantoms
+                    update(sim_results[t].XA, sim_results[t].XB, sim_results[t].Xa, sim_results[t].Xb, sim_results[t].x0)
+                else
+                    update(sim_results[t].XA, sim_results[t].XB, sim_results[t].x0)
+                end
+                ax.title = "Time step = $(string(t))"
+            end
+        end
+    else
+        for t in 1:T
+            if update_phantoms
+                update(sim_results[t].XA, sim_results[t].XB, sim_results[t].Xa, sim_results[t].Xb, sim_results[t].x0)
+            else
+                update(sim_results[t].XA, sim_results[t].XB, sim_results[t].x0)
+            end
+            ax.title = "Time step = $(string(t))"
+            sleep(sleep_duration)
+        end
     end
 end

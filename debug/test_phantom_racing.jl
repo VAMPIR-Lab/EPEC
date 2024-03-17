@@ -13,18 +13,18 @@ include("../racing/visualize_phantom_racing.jl")
 # gnep: OP1 OP2
 # bilevel: OP1 <- OPa
 # bilevel: OP2 <- OPb
-probs = setup(; T=10,
-    Δt=0.1,
-    r=1.0,
-    α1=1e-3,
-    α2=1e-4,
-    β=1e-1, #.5, # sensitive to high values
-    cd=0.2, #0.25,
-    u_max_nominal=1.0,
-    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
-    box_length=5.0,
-    box_width=2.0,
-    lat_max=2.0);
+#probs = setup(; T=10,
+#    Δt=0.1,
+#    r=1.0,
+#    α1=1e-3,
+#    α2=1e-4,
+#    β=1e-1, #.5, # sensitive to high values
+#    cd=0.2, #0.25,
+#    u_max_nominal=1.0,
+#    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
+#    box_length=5.0,
+#    box_width=2.0,
+#    lat_max=2.0);
 
 #x0 = [1.0, 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
 
@@ -42,7 +42,7 @@ x0 = [1.5966679528041663
 0.0
 2.75401313424805]
 
-sim_results = solve_simulation(probs, 1; x0);
+sim_results = solve_simulation(probs, 10; x0);
 
 #show_me(probs.extract(θ, probs.gnep.x_inds), x0)
 animate(probs, sim_results; save=false);

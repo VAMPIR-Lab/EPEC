@@ -266,10 +266,11 @@ end
 
 # X is ego
 function u_max_ego(X, X_opp; u_max_nominal, u_max_drafting, box_length, box_width)
-    T = Int(length(X) / 4)
+    xdim = 4
+    T = Int(length(X) / xdim)
     d = mapreduce(vcat, 1:T) do t
-        @inbounds x = @view(X[(t-1)*4+1:t*4])
-        @inbounds x_opp = @view(X_opp[(t-1)*4+1:t*4])
+        @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
+        @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
         [x[1] - x_opp[1] x[2] - x_opp[2]]
     end
     @assert size(d) == (T, 2)
@@ -623,7 +624,7 @@ function setup(; T=10,
 
     # 2 Players -------
     # 1. Nash equilibrium: 
-    gnep = [OP_A OP_B]
+    nash = [OP_A OP_B]
     # 2. A-leader bilevel:
     A_leader = [OP_A; OP_B]
     # 3. B-leader bilevel:
@@ -637,17 +638,35 @@ function setup(; T=10,
     # 6. both phantoms:
     phantom = EPEC.create_epec((2, 2), OP_Ab, OP_Ba, OP_a, OP_b)
 
-    OPs = (; A=OP_A, B=OP_B, Ab_only_b=OP_Ab_only_b, B_only_b=OP_B_only_b, b_only_b=OP_b_only_b, A_only_a=OP_A_only_a,Ba_only_a=OP_Ba_only_a, a_only_a=OP_a_only_a, Ab=OP_Ab, Ba=OP_Ba, a=OP_a, b=OP_b)
+    OPs = (; A=OP_A, B=OP_B, Ab_only_b=OP_Ab_only_b, B_only_b=OP_B_only_b, b_only_b=OP_b_only_b, A_only_a=OP_A_only_a, Ba_only_a=OP_Ba_only_a, a_only_a=OP_a_only_a, Ab=OP_Ab, Ba=OP_Ba, a=OP_a, b=OP_b)
 
-    function extract(θ, x_inds, x0)
+    function extract_nash(θ, x_inds, x0)
         z = θ[x_inds]
-        T, X1, U1, X2, U2, Xa, Ua, Xb, Ub, x01, x02, inds = view_x_w([z; x0])
-        (; X1, U1, X2, U2, Xa, Ua, Xb, Ub)
+        XA, UA, XB, UB, x0A, x0B, T, inds = view_z_AB([z; x0])
+        (; XA, UA, XB, UB)
+    end
+
+    function extract_only_a(θ, x_inds, x0)
+        z = θ[x_inds]
+        XA, UA, XB, UB, Xa, Ua, Xb, Ub, x0A, x0B, T, inds = view_z_ABa([z; x0])
+        (; XA, UA, XB, UB, Xa, Ua, Xb, Ub)
+    end
+
+    function extract_only_b(θ, x_inds, x0)
+        z = θ[x_inds]
+        XA, UA, XB, UB, Xb, Ub, x0A, x0B, T, inds = view_z_ABa([z; x0])
+        (; XA, UA, XB, UB, Xb, Ub)
+    end
+
+    function extract_phantom(θ, x_inds, x0)
+        z = θ[x_inds]
+        XA, UA, XB, UB, Xa, Ua, Xb, Ub, x0A, x0B, T, inds = view_z_ABab([z; x0])
+        (; XA, UA, XB, UB, Xa, Ua, Xb, Ub)
     end
 
     params = (; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, β, box_length, box_width, min_long_vel, col_buffer)
 
-    (; gnep, A_leader, B_leader, only_b_phantom, only_a_phantom, phantom, params, extract, OPs)
+    (; nash, A_leader, B_leader, only_b_phantom, only_a_phantom, phantom, params, extract_nash, extract_only_a, extract_only_b, extract_phantom, OPs)
 end
 
 function attempt_solve(prob, init)
@@ -662,209 +681,242 @@ function attempt_solve(prob, init)
     (success, result)
 end
 
-function solve_seq(probs, x0)
+# initializations:
+# nash:
+# dummy->gnep
+# bilevel:
+# gnep->A_leader
+# gnep->B_leader
+# phantoms:
+# gnep->only_a_phantom
+# gnep->only_b_phantom
+# only_a_phantom + only_b_phantom->both_phantoms
+
+function solve_nash_seq(probs, x0)
+    T = probs.params.T
+    Δt = probs.params.Δt
+    cd = probs.params.cd
+    XA = []
+    UA = []
+    XB = []
+    UB = []
+    x0A = x0[1:4]
+    x0B = x0[5:8]
+    xA = x0A
+    xA = x0B
+
+    for t in 1:T
+        uA = [0; 0]
+        uB = [0; 0]
+        xA = pointmass(xA, uA; Δt, cd)
+        xb = pointmass(xA, uB; Δt, cd)
+        append!(UA, uA)
+        append!(UB, uB)
+        append!(XA, xA)
+        append!(XB, xb)
+    end
+
+    nash_init = zeros(probs.nash.top_level.n)
+    nash_init[probs.nash.x_inds] = [XA; UA; XB; UB]
+    nash_init = [nash_init; x0]
+    nash_success, θ_nash = attempt_solve(probs.nash, nash_init)
+
+    if nash_success
+        τ = probs.extract_nash(θ_nash, probs.nash.x_inds, x0)
+    else
+        τ = (; XA, UA, XB, UB)
+    end
+
+    (τ, nash_success)
+end
+
+function solve_A_leader_seq(probs, x0)
+end
+
+function solve_B_leader_seq(probs, x0)
+end
+
+function solve_phantom_seq(probs, x0)
     dummy_init = zeros(probs.gnep.top_level.n)
     X = dummy_init[probs.gnep.x_inds]
     #T = Int(length(X) / 12)
     T = probs.params.T
     Δt = probs.params.Δt
     cd = probs.params.cd
-    Xa = []
-    Ua = []
-    Xb = []
-    Ub = []
-    x0a = x0[1:4]
-    x0b = x0[5:8]
-    xa = x0a
-    xb = x0b
+    XA = []
+    UA = []
+    XB = []
+    UB = []
+    x0A = x0[1:4]
+    x0B = x0[5:8]
+    xA = x0A
+    xA = x0B
     for t in 1:T
-        ua = cd * xa[3:4]
-        ub = cd * xb[3:4]
-        xa = pointmass(xa, ua, Δt, cd)
-        xb = pointmass(xb, ub, Δt, cd)
-        append!(Ua, ua)
-        append!(Ub, ub)
-        append!(Xa, xa)
-        append!(Xb, xb)
+        uA = [0; 0]
+        uB = [0; 0]
+        xA = pointmass(xA, uA; Δt, cd)
+        xb = pointmass(xA, uB; Δt, cd)
+        append!(UA, uA)
+        append!(UB, uB)
+        append!(XA, xA)
+        append!(XB, xb)
     end
-    dummy_init = [Xa; Ua; Xb; Ub]
-    Z = (; Xa, Ua, Xb, Ub, x0a, x0b)
+    dummy_init = [XA; UA; XB; UB]
+    τ = (; XA, UA, XB, UB, Xa=XA, Ua=UA, Xb=XB, Ub=UB, x0A, x0B)
+    valid_Z = Dict()
+    valid_Z[8] = τ
+    #gnep, A_leader, B_leader, only_b_phantom, only_a_phantom, phantom
 
-    @infiltrate
+
+    if try_bilevel_first && want_bilevel
+        # initialized from dummy:
+        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+        bilevel_init[probs.gnep.x_inds] = [XA; UA; XB; UB]
+        bilevel_init = [bilevel_init; x0]
+        #@info "(1) bilevel..."
+        bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
+
+        if bilevel_success
+            #@info "bilevel success 1"
+            valid_Z[1] = probs.extract_bilevel(θ_bilevel)
+        else
+            want_gnep = true
+        end
+    elseif want_bilevel
+        want_gnep = true
+    end
+
     @info "gnep"
     gnep_init = zeros(probs.gnep.top_level.n)
-    gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
+    gnep_init[probs.gnep.x_inds] = [XA; UA; XB; UB]
     gnep_init = [gnep_init; x0]
     gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
     @info "phantom pain"
     phantom_init = zeros(probs.phantom.top_level.n)
-    phantom_init[probs.phantom.x_inds] = [Xa; Ua; Xb; Ub; Xa; Ua; Xb; Ub]
+    phantom_init[probs.phantom.x_inds] = [τ.XA; τ.UA; τ.XB; τ.UB; τ.Xa; τ.Ua; τ.Xb; τ.Ub]
     phantom_init = [phantom_init; x0]
 
+    @infiltrate
     if (gnep_success)
         phantom_init[probs.phantom.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
         phantom_init[probs.phantom.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
         phantom_init[probs.phantom.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
         phantom_init[probs.phantom.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-        phantom_init[probs.phantom.inds["λ", 3]] = θ_gnep[probs.gnep.inds["λ", 2]]
-        phantom_init[probs.phantom.inds["s", 3]] = θ_gnep[probs.gnep.inds["s", 2]]
-        phantom_init[probs.phantom.inds["λ", 4]] = θ_gnep[probs.gnep.inds["λ", 1]]
-        phantom_init[probs.phantom.inds["s", 4]] = θ_gnep[probs.gnep.inds["s", 1]]
+        #phantom_init[probs.phantom.inds["λ", 3]] = θ_gnep[probs.gnep.inds["λ", 2]]
+        #phantom_init[probs.phantom.inds["s", 3]] = θ_gnep[probs.gnep.inds["s", 2]]
+        #phantom_init[probs.phantom.inds["λ", 4]] = θ_gnep[probs.gnep.inds["λ", 1]]
+        #phantom_init[probs.phantom.inds["s", 4]] = θ_gnep[probs.gnep.inds["s", 1]]
     end
 
     phantom_success, θ_phantom = attempt_solve(probs.phantom, phantom_init)
-    show_me(probs.extract(θ_phantom, probs.phantom.x_inds), x0)
 
-    if phantom_success
-        @info "phantom success"
-        Z = probs.extract(θ_phantom, probs.phantom.x_inds)
+    if (phantom_success)
+        τ = probs.extract_ABab(θ_phantom, probs.phantom.x_inds, x0)
+    end
+    #show_me(probs.extract_ABab(θ_phantom, probs.phantom.x_inds, x0), x0)
+
+    sorted_Z = sort(collect(valid_Z), by=x -> x[1])
+    lowest_preference, τ = sorted_Z[1] # best pair
+
+    if lowest_preference < 8
+        print("Success $lowest_preference ")
     else
-        @infiltrate
+        print("Fail $lowest_preference ")
     end
 
-    #@info "Solving gnep.."
-    #gnep_init = zeros(probs.gnep.top_level.n)
-    #gnep_init[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
-    #gnep_init[probs.bilevel.inds["λ", 1]] = θ_sp_a[probs.gnep.inds["λ", 1]]
-    #gnep_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
-    #gnep_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
-    #gnep_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
-    #gnep_init = [gnep_init; x0]
-    ##show_me(gnep_init, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
+    PA = [τ.XA[1:4:end] τ.XA[2:4:end] τ.XA[3:4:end] τ.XA[4:4:end]]
+    PB = [τ.XA[1:4:end] τ.XB[2:4:end] τ.XB[3:4:end] τ.XB[4:4:end]]
+    Pa = [τ.Xa[1:4:end] τ.Xa[2:4:end] τ.Xa[3:4:end] τ.Xa[4:4:end]]
+    Pb = [τ.Xb[1:4:end] τ.Xb[2:4:end] τ.Xb[3:4:end] τ.Xb[4:4:end]]
+    UA = [τ.UA[1:2:end] τ.UB[2:2:end]]
+    UB = [τ.UA[1:2:end] τ.UB[2:2:end]]
+    Ua = [τ.Ua[1:2:end] τ.Ua[2:2:end]]
+    Ub = [τ.Ub[1:2:end] τ.Ub[2:2:end]]
 
-    #θ_gnep = gnep_init # fall back
-    #try
-    #    θ_gnep = solve(probs.gnep, gnep_init)
-    #    #show_me(θ_gnep, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-    #catch err
-    #    println(err)
-    #    @info "Fell back to gnep init.."
-    #end
-
-    #@info "Solving bilevel a.."
-    #bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
-    #bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
-    #bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
-    #bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
-    #bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
-    #bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-    #bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
-
-    #θ_bilevel = bilevel_init # fall back
-
-    #try
-    #    θ_bilevel = solve(probs.bilevel, bilevel_init)
-    #    #show_me(θ_bilevel, x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
-    #    Z = probs.extract_bilevel(θ_bilevel)
-    #catch err
-    #    println(err)
-    #    @info "Fell back to gnep init.."
-    #end
-
-    #Z = probs.extract_bilevel(θ_bilevel)
-    #P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
-    #U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
-    #P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
-    #U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
-
-    PA = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
-    UA = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
-    PB = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
-    UB = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
-
-    PAp = [Z.Xap[1:4:end] Z.Xap[2:4:end] Z.Xap[3:4:end] Z.Xap[4:4:end]]
-    UAp = [Z.Xbp[1:4:end] Z.Xbp[2:4:end] Z.Xbp[3:4:end] Z.Xbp[4:4:end]]
-    PBp = [Z.Xbp[1:4:end] Z.Xbp[2:4:end] Z.Xbp[3:4:end] Z.Xbp[4:4:end]]
-    UBp = [Z.Ubp[1:2:end] Z.Ubp[2:2:end]]
-    #gd = col(Z.Xa, Z.Xb, probs.params.r)
-    #h = responsibility(Z.Xa, Z.Xb)
-    #gd_both = [gd - l.(h) gd - l.(-h) gd]
-    (; PA, PB, PAp, PBp, UA, UB, UAp, UBp)
+    (; PA, PB, Pa, Pb, UA, UB, Ua, Ub, lowest_preference, sorted_Z)
 end
 
-# Solve mode:
+# check initial condition feasibility
+function check_feasibility(x0; r, lat_max, min_long_vel)
+    x0A = x0[1:4]
+    x0B = x0[5:8]
+    is_x0_infeasible = false
+    reason = ""
+
+    if col(x0A, x0B; r)[1] <= 0 - 1e-4
+        reason = "Collision"
+        is_x0_infeasible = true
+    elseif x0A[1] < -lat_max - 1e-4 || x0A[1] > lat_max + 1e-4 || x0B[1] < -lat_max - 1e-4 || x0B[1] > lat_max + 1e-4
+        reason = "Out of lanes"
+        is_x0_infeasible = true
+    elseif x0A[4] < min_long_vel - 1e-4 || x0B[4] < min_long_vel - 1e-4
+        reason = "Invalid velocity"
+        is_x0_infeasible = true
+    end
+    (is_x0_infeasible, reason)
+end
+
+# clamp controls and get next x0
+function apply_control(τ)
+    xdim = 4
+    udim = 2
+    xA = τ.XA[1:xdim]
+    xB = τ.XB[1:xdim]
+    uA = τ.UA[1:udim]
+    uB = τ.UB[1:udim]
+    uA_maxes = u_max_ego(xA,
+        xB;
+        probs.params.u_max_nominal,
+        probs.params.u_max_drafting,
+        probs.params.box_length,
+        probs.params.box_width)
+
+    uB_maxes = u_max_ego(xB,
+        xA;
+        probs.params.u_max_nominal,
+        probs.params.u_max_drafting,
+        probs.params.box_length,
+        probs.params.box_width)
+
+    uA[1] = minimum([maximum([uA[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
+    uB[1] = minimum([maximum([uB[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
+    uA[2] = minimum([maximum([uA[2], -probs.params.u_max_braking]), uA_maxes[1][1], uA_maxes[2][1], uA_maxes[3][1], uA_maxes[4][1]])
+    uB[2] = minimum([maximum([uB[2], -probs.params.u_max_braking]), uB_maxes[1][1], uB_maxes[2][1], uB_maxes[3][1], uB_maxes[4][1]])
+    x0A = pointmass(xA, uA; probs.params.Δt, probs.params.cd)
+    x0B = pointmass(xB, uB; probs.params.Δt, probs.params.cd)
+
+    [x0A; x0B]
+end
+
+# Solve mode (TBD):
 #						P1:						
-#				SP  NE   P1-leader  P1-follower
-#			 SP 1              
-# P2:		 NE 2   3
-#	  P2-Leader 4   5   6 
-#   P2-Follower 7   8   9		    10
+#				NE   P1-leader  P1-follower a-phantom b-phantom     
+# P2:		 NE 1   
+#	  P2-Leader 2   3    
+#   P2-Follower 4   5           6		   
 #
-function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7])
-    lat_max = probs.params.lat_max
-    status = "ok"
-    x0a = x0[1:4]
-    x0b = x0[5:8]
-
+function solve_simulation(probs, T; x0)
     results = Dict()
-    for t = 1:T
-        #@info "Sim timestep $t:"
-        print("Sim timestep $t: ")
-        # check initial condition feasibility
-        is_x0_infeasible = false
 
-        if col(x0a, x0b; probs.params.r)[1] <= 0 - 1e-4
-            status = "Infeasible initial condition: Collision"
-            is_x0_infeasible = true
-        elseif x0a[1] < -lat_max - 1e-4 || x0a[1] > lat_max + 1e-4 || x0b[1] < -lat_max - 1e-4 || x0b[1] > lat_max + 1e-4
-            status = "Infeasible initial condition: Out of lanes"
-            is_x0_infeasible = true
-        elseif x0a[4] < probs.params.min_long_vel - 1e-4 || x0b[4] < probs.params.min_long_vel - 1e-4
-            status = "Infeasible initial condition: Invalid velocity"
-            is_x0_infeasible = true
-        end
+    for t = 1:T
+        print("Sim timestep $t: ")
+        is_x0_infeasible, reason = check_feasibility(x0; probs.params.r, probs.params.lat_max, probs.params.min_long_vel)
 
         if is_x0_infeasible
-            # currently status isn't saved
-            print(status)
+            print(reason)
             print("\n")
-            results[t] = (; x0, P1=repeat(x0', 10, 1), P2=repeat(x0', 10, 1))
             break
         end
-
-        res = solve_seq(probs, x0)
-        r_PA = res.PA
-        r_UA = res.UA
-        r_PB = res.PB
-        r_UB = res.UB
-        r_PAp = res.PAp
-        r_UAp = res.UAp
-        r_PBp = res.PBp
-        r_UBp = res.UBp
-        r = (; PA=r_PA, UA=r_UA, PB=r_PB, UB=r_UB, PAp=r_PAp, UAp=r_UAp, PBp=r_PBp, UBp=r_UBp)
+        τ, nash_success = solve_nash_seq(probs, x0)
+        if nash_success
+            print("nash success")
+        end
         print("\n")
+  
+        results[t] = (; x0, τ.XA, τ.XB, τ.UA, τ.UB)
 
-        # clamp controls and check feasibility
-        xa = r.PA[1, :]
-        xb = r.PB[1, :]
-        ua = r.UA[1, :]
-        ub = r.UB[1, :]
-
-        ua_maxes = u_max_ego(xa,
-            xb,
-            probs.params.u_max_nominal,
-            probs.params.u_max_drafting,
-            probs.params.box_length,
-            probs.params.box_width)
-
-        ub_maxes = u_max_ego(xb,
-            xa,
-            probs.params.u_max_nominal,
-            probs.params.u_max_drafting,
-            probs.params.box_length,
-            probs.params.box_width)
-
-        ua[1] = minimum([maximum([ua[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
-        ub[1] = minimum([maximum([ub[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
-        ua[2] = minimum([maximum([ua[2], -probs.params.u_max_braking]), ua_maxes[1][1], ua_maxes[2][1], ua_maxes[3][1], ua_maxes[4][1]])
-        ub[2] = minimum([maximum([ub[2], -probs.params.u_max_braking]), ub_maxes[1][1], ub_maxes[2][1], ub_maxes[3][1], ub_maxes[4][1]])
-
-        x0a = pointmass(xa, ua, probs.params.Δt, probs.params.cd)
-        x0b = pointmass(xb, ub, probs.params.Δt, probs.params.cd)
-
-        results[t] = (; x0, r.PA, r.PB, r.PAp, r.PBp, r.UA, r.UB, r.UAp, r.UBp)
-        x0 = [x0a; x0b]
+        x0 = apply_control(τ)
     end
     results
 end
