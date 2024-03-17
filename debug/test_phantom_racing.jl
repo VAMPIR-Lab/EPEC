@@ -42,7 +42,7 @@ x0 = [1.5966679528041663
 0.0
 2.75401313424805]
 
-sim_results = solve_simulation(probs, 10; x0);
+sim_results = solve_simulation(probs, 50; x0);
 
 #show_me(probs.extract(θ, probs.gnep.x_inds), x0)
 animate(probs, sim_results; save=false);
