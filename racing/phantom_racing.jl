@@ -300,10 +300,10 @@ function g_ego(X, U, x0, X_opp; Δt, r, cd, u_max_nominal, u_max_drafting, box_l
         g_dyn
         g_col - l.(h_col) .- col_buffer
         lat_accel
-        long_accel - u_max_1
-        long_accel - u_max_2
-        long_accel - u_max_3
-        long_accel - u_max_4
+        #long_accel - u_max_1
+        #long_accel - u_max_2
+        #long_accel - u_max_3
+        #long_accel - u_max_4
         long_accel
         long_vel
         lat_pos
@@ -550,7 +550,7 @@ function setup(; T=10,
     α1=1e-3,
     α2=1e-4,
     β=1e-1, #.5, # sensitive to high values
-    γ=0.5,
+    γ=0.0,
     cd=0.2, #0.25,
     u_max_nominal=1.0,
     u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
@@ -563,8 +563,10 @@ function setup(; T=10,
     xdim = 4
     udim = 2
 
-    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-u_max_braking, T); fill(min_long_vel, T); fill(-lat_max, T)]
-    ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(Inf, T); fill(+lat_max, T)]
+    #lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-u_max_braking, T); fill(min_long_vel, T); fill(-lat_max, T)]
+    #ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(Inf, T); fill(+lat_max, T)]
+    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-u_max_braking, T); fill(min_long_vel, T); fill(-lat_max, T)]
+    ub = [fill(0.0, 4 * T); fill(Inf, T); fill(u_max_nominal, T); fill(u_max_nominal, T); fill(Inf, T); fill(+lat_max, T)]
     lb_all = [lb; lb]
     ub_all = [ub; ub]
 
@@ -806,8 +808,8 @@ function solve_only_b_phantom_seq(probs, x0; dummy_init_first=false)
         if nash_success
             A_leader_init[probs.A_leader.x_inds] = θ_nash[probs.nash.x_inds]
             A_leader_init[probs.A_leader.inds["λ", 1]] = θ_nash[probs.nash.inds["λ", 1]]
-            A_leader_init[probs.A_leader.inds["s", 1]] = θ_nash[probs.nash.inds["s", 1]]
             A_leader_init[probs.A_leader.inds["λ", 2]] = θ_nash[probs.nash.inds["λ", 2]]
+            A_leader_init[probs.A_leader.inds["s", 1]] = θ_nash[probs.nash.inds["s", 1]]
             A_leader_init[probs.A_leader.inds["s", 2]] = θ_nash[probs.nash.inds["s", 2]]
 
             A_leader_success, θ_A_leader = attempt_solve(probs.A_leader, A_leader_init)
@@ -816,24 +818,28 @@ function solve_only_b_phantom_seq(probs, x0; dummy_init_first=false)
             A_leader_success, θ_A_leader = attempt_solve(probs.A_leader, A_leader_init)
         end
 
-        if nash_success
+        if nash_success && A_leader_success
             T = probs.params.T
             τdim = 6
-            init[1:2*τdim*T] .= θ_nash[probs.nash.x_inds]
-            #λdim = length(θ_nash[probs.nash.inds["λ", 1]])
-            #sdim = length(θ_nash[probs.nash.inds["s", 1]])
-            #init[probs.only_b_phantom.inds["λ", 1]] = θ_nash[probs.nash.inds["λ", 1]]
-            #init[probs.only_b_phantom.inds["s", 1]] = θ_nash[probs.nash.inds["s", 1]]
-            #init[probs.only_b_phantom.inds["λ", 2]] = θ_nash[probs.nash.inds["λ", 2]]
-            #init[probs.only_b_phantom.inds["s", 2]] = θ_nash[probs.nash.inds["s", 2]]
-            #init[probs.only_b_phantom.inds["λ", 3]] = θ_nash[probs.nash.inds["λ", 2]]
-            #init[probs.only_b_phantom.inds["s", 3]] = θ_nash[probs.nash.inds["s", 2]]
-        end
 
-        if A_leader_success
-            T = probs.params.T
-            τdim = 6
-            init[2*τdim*T:3*τdim*T] = θ_A_leader[τdim*T:2*τdim*T]
+            init[1:2*τdim*T] .= θ_nash[probs.nash.x_inds]
+            init[2*τdim*T:3*τdim*T] .= θ_A_leader[τdim*T:2*τdim*T]
+            #init[probs.only_b_phantom.inds["z", 1]] = θ_A_leader[probs.A_leader.inds["z", 1]]
+            #init[probs.only_b_phantom.inds["z", 2]] = θ_A_leader[probs.A_leader.inds["z", 1]]
+            init[probs.only_b_phantom.inds["λ", 1]] =
+                [θ_nash[probs.nash.inds["λ", 1]]; θ_A_leader[probs.A_leader.inds["λ", 1]]]
+            init[probs.only_b_phantom.inds["λ", 2]] = θ_nash[probs.nash.inds["λ", 2]]
+            init[probs.only_b_phantom.inds["λ", 3]] = θ_A_leader[probs.A_leader.inds["λ", 2]]
+            init[probs.only_b_phantom.inds["s", 1]] =
+                [θ_nash[probs.nash.inds["s", 1]]; θ_A_leader[probs.A_leader.inds["s", 2]]]
+            init[probs.only_b_phantom.inds["s", 2]] = θ_nash[probs.nash.inds["s", 2]]
+            init[probs.only_b_phantom.inds["s", 3]] = θ_A_leader[probs.A_leader.inds["s", 2]]
+            #init[probs.only_b_phantom.inds["ψ", 1]] = θ_A_leader[probs.A_leader.inds["ψ", 1]]
+            #init[probs.only_b_phantom.inds["ψ", 2]] = θ_A_leader[probs.A_leader.inds["ψ", 1]]
+            #init[probs.only_b_phantom.inds["r", 1]] = θ_A_leader[probs.A_leader.inds["r", 1]]
+            #init[probs.only_b_phantom.inds["r", 2]] = θ_A_leader[probs.A_leader.inds["r", 1]]
+            #init[probs.only_b_phantom.inds["γ", 1]] = θ_A_leader[probs.A_leader.inds["γ", 1]]
+            #init[probs.only_b_phantom.inds["γ", 2]] = θ_A_leader[probs.A_leader.inds["γ", 1]]
         end
 
         #@infiltrate
@@ -845,24 +851,97 @@ function solve_only_b_phantom_seq(probs, x0; dummy_init_first=false)
         #elseif nash_success
         #    τ = probs.extract_ABb(θ_nash, probs.nash.x_inds, x0)
     else
-        @infiltrate
+        #@infiltrate
         τ = (; XA, UA, XB, UB, Xb=XB, Ub=UB)
     end
 
     (τ, success)
 end
 
-function solve_phantom_seq(probs, x0)
-    @info "gnep"
-    gnep_init = zeros(probs.gnep.top_level.n)
-    gnep_init[probs.gnep.x_inds] = [XA; UA; XB; UB]
-    gnep_init = [gnep_init; x0]
-    gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
+function solve_phantom_seq(probs, x0; dummy_init_first=false)
+    XA, UA, XB, UB = get_dummy_sol(x0; probs.params.T, probs.params.Δt, probs.params.cd)
 
-    @info "phantom pain"
-    phantom_init = zeros(probs.phantom.top_level.n)
-    phantom_init[probs.phantom.x_inds] = [τ.XA; τ.UA; τ.XB; τ.UB; τ.Xa; τ.Ua; τ.Xb; τ.Ub]
-    phantom_init = [phantom_init; x0]
+    init = zeros(probs.phantom.top_level.n)
+    init[probs.phantom.x_inds] = [XA; UA; XB; UB; XA; UA; XB; UB]
+    init = [init; x0]
+
+    if dummy_init_first
+        success, θ = attempt_solve(probs.phantom, init)
+    else
+        success = false
+    end
+
+    # initialize with nash and     
+    if !success
+        nash_init = zeros(probs.nash.top_level.n)
+        nash_init[probs.nash.x_inds] = [XA; UA; XB; UB]
+        nash_init = [nash_init; x0]
+        nash_success, θ_nash = attempt_solve(probs.nash, nash_init)
+
+        A_leader_init = zeros(probs.A_leader.top_level.n)
+        A_leader_init[probs.A_leader.x_inds] = [XA; UA; XB; UB]
+        A_leader_init = [A_leader_init; x0]
+
+        if nash_success
+            A_leader_init[probs.A_leader.x_inds] = θ_nash[probs.nash.x_inds]
+            A_leader_init[probs.A_leader.inds["λ", 1]] = θ_nash[probs.nash.inds["λ", 1]]
+            A_leader_init[probs.A_leader.inds["λ", 2]] = θ_nash[probs.nash.inds["λ", 2]]
+            A_leader_init[probs.A_leader.inds["s", 1]] = θ_nash[probs.nash.inds["s", 1]]
+            A_leader_init[probs.A_leader.inds["s", 2]] = θ_nash[probs.nash.inds["s", 2]]
+
+            A_leader_success, θ_A_leader = attempt_solve(probs.A_leader, A_leader_init)
+        else
+            # try dummy init anyway
+            A_leader_success, θ_A_leader = attempt_solve(probs.A_leader, A_leader_init)
+        end
+
+        if nash_success && A_leader_success
+            T = probs.params.T
+            τdim = 6
+
+            init[1:2*τdim*T] .= θ_nash[probs.nash.x_inds]
+            init[2*τdim*T:3*τdim*T] .= θ_A_leader[τdim*T:2*τdim*T]
+            #init[probs.phantom.inds["z", 1]] = [θ_A_leader[probs.A_leader.inds["z", 1]]; θ_A_leader[probs.A_leader.inds["z", 1]]]
+            #init[probs.phantom.inds["z", 2]] = [θ_A_leader[probs.A_leader.inds["z", 1]]; θ_A_leader[probs.A_leader.inds["z", 1]]]
+            init[probs.phantom.inds["λ", 1]] =
+                [θ_nash[probs.nash.inds["λ", 1]]; θ_A_leader[probs.A_leader.inds["λ", 1]]]
+            init[probs.phantom.inds["λ", 2]] = [θ_nash[probs.nash.inds["λ", 2]]; θ_A_leader[probs.A_leader.inds["λ", 2]]]
+            init[probs.phantom.inds["λ", 3]] = θ_A_leader[probs.A_leader.inds["λ", 2]]
+            init[probs.phantom.inds["λ", 4]] = θ_A_leader[probs.A_leader.inds["λ", 2]]
+            init[probs.phantom.inds["s", 1]] =
+                [θ_nash[probs.nash.inds["s", 1]]; θ_A_leader[probs.A_leader.inds["s", 1]]]
+            init[probs.phantom.inds["s", 2]] =
+                [θ_nash[probs.nash.inds["s", 2]]; θ_A_leader[probs.A_leader.inds["s", 2]]]
+            init[probs.phantom.inds["s", 3]] = θ_A_leader[probs.A_leader.inds["s", 2]]
+            init[probs.phantom.inds["s", 4]] = θ_A_leader[probs.A_leader.inds["s", 2]]
+            #init[probs.phantom.inds["ψ", 1]] =
+            #    [θ_A_leader[probs.A_leader.inds["ψ", 1]]; θ_A_leader[probs.A_leader.inds["ψ", 1]]]
+            #init[probs.phantom.inds["ψ", 2]] =
+            #    [θ_A_leader[probs.A_leader.inds["ψ", 1]]; θ_A_leader[probs.A_leader.inds["ψ", 1]]]
+            #init[probs.phantom.inds["r", 1]] =
+            #    [θ_A_leader[probs.A_leader.inds["r", 1]]; θ_A_leader[probs.A_leader.inds["r", 1]]]
+            #init[probs.phantom.inds["r", 2]] =
+            #    [θ_A_leader[probs.A_leader.inds["r", 1]]; θ_A_leader[probs.A_leader.inds["r", 1]]]
+            #init[probs.phantom.inds["γ", 1]] =
+            #    [θ_A_leader[probs.A_leader.inds["γ", 1]]; θ_A_leader[probs.A_leader.inds["γ", 1]]]
+            #init[probs.phantom.inds["γ", 2]] =
+            #    [θ_A_leader[probs.A_leader.inds["γ", 1]]; θ_A_leader[probs.A_leader.inds["γ", 1]]]
+        end
+
+        #    #@infiltrate
+        success, θ = attempt_solve(probs.phantom, init)
+    end
+
+    if success
+        τ = probs.extract_ABab(θ, probs.phantom.x_inds, x0)
+        #elseif nash_success
+        #    τ = probs.extract_ABb(θ_nash, probs.nash.x_inds, x0)
+    else
+        #@infiltrate
+        τ = (; XA, UA, XB, UB, Xa=XA, Ua=UA, Xb=XB, Ub=UB)
+    end
+
+    (τ, success)
 end
 
 # check initial condition feasibility
@@ -941,9 +1020,15 @@ function solve_simulation(probs, T; x0)
             # for visualization purposes
             XA = τ.XA
             XB = τ.XB
+            #Xa = τ.Xa
+            Xb = τ.Xb
             XA[1:4] = XA[9:12]
             XB[1:4] = XB[9:12]
-            results[t] = (; x0, XA, XB, τ.UA, τ.UB, status)
+            #Xa[1:4] = Xa[9:12]
+            Xb[1:4] = Xb[9:12]
+            #results[t] = (; x0, XA, XB, τ.UA, τ.UB, status)
+            results[t] = (; x0, XA, XB, Xb, Xa=XA, τ.UA, τ.UB, τ.Ub, status)
+            #results[t] = (; x0, XA, XB, Xa, Xb, τ.UA, τ.UB, τ.Ua, τ.Ub, status)
             print("\n")
             break
         end
@@ -964,12 +1049,19 @@ function solve_simulation(probs, T; x0)
         if success_only_b_phantom
             print("only b phantom success")
         end
+        τ = τ_only_b_phantom
+
+        #τ_phantom, success_phantom = solve_phantom_seq(probs, x0)
+        #if success_phantom
+        #    print("phantom success")
+        #end
+        #τ = τ_phantom
         print("\n")
 
-        τ = τ_only_b_phantom
 
         #results[t] = (; x0, τ.XA, τ.XB, τ.UA, τ.UB, status)
         results[t] = (; x0, τ.XA, τ.XB, τ.Xb, Xa=τ.XA, τ.UA, τ.UB, τ.Ub, status)
+        #results[t] = (; x0, τ.XA, τ.XB, τ.Xa, τ.Xb, τ.UA, τ.UB, τ.Ua, τ.Ub, status)
         x0 = apply_control(τ)
     end
     results
