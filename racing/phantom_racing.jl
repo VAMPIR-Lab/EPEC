@@ -370,10 +370,10 @@ end
 # gAb = 
 #  gA(τA, τb)
 #  gA(τA, τB)
-function gAb_only_b(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+function gAb_only_b(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ)
     XA, UA, XB, UB, Xb, Ub, x0A, x0B, T, inds = view_z_ABb(z)
-    [g_ego(XA, UA, x0A, Xb; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-        g_ego(XA, UA, x0A, XB; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
+    [γ * g_ego(XA, UA, x0A, Xb; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+        (1.0 - γ) * g_ego(XA, UA, x0A, XB; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)]
 end
 
 ###############
@@ -586,7 +586,7 @@ function setup(; T=10,
     #fA_only_a_pin = (z -> fA_only_a(z; α1, α2, β))
     #fa_only_a_pin = (z -> fa_only_a(z; α1, α2, β))
 
-    gAb_only_b_pin = (z -> gAb_only_b(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    gAb_only_b_pin = (z -> gAb_only_b(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer, γ))
     gB_only_b_pin = (z -> gB_only_b(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
     gb_only_b_pin = (z -> gb_only_b(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
     #gBa_only_a_pin = (z -> gBa_only_a(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
@@ -628,6 +628,7 @@ function setup(; T=10,
     nash = [OP_A OP_B]
     # 2. A-leader bilevel:
     A_leader = [OP_A; OP_B]
+
     # 3. B-leader bilevel:
     #B_leader = [OP_B; OP_A]
     # 3 Players -------
@@ -644,21 +645,21 @@ function setup(; T=10,
     function extract_AB(θ, x_inds, x0)
         z = θ[x_inds]
         XA, UA, XB, UB, x0A, x0B, T, inds = view_z_AB([z; x0])
-        (; XA, UA, XB, UB)
+        (; XA, UA, XB, UB, x0A, x0B, T, inds)
     end
 
     function extract_ABb(θ, x_inds, x0)
         z = θ[x_inds]
         XA, UA, XB, UB, Xb, Ub, x0A, x0B, T, inds = view_z_ABb([z; x0])
-        (; XA, UA, XB, UB, Xb, Ub)
+        (; XA, UA, XB, UB, Xb, Ub, x0A, x0B, T, inds)
     end
 
     function extract_ABab(θ, x_inds, x0)
         z = θ[x_inds]
         XA, UA, XB, UB, Xa, Ua, Xb, Ub, x0A, x0B, T, inds = view_z_ABab([z; x0])
-        (; XA, UA, XB, UB, Xa, Ua, Xb, Ub)
+        (; XA, UA, XB, UB, Xa, Ua, Xb, Ub, x0A, x0B, T, inds)
     end
-    
+
     #function extract_ABa(θ, x_inds, x0)
     #    z = θ[x_inds]
     #    XA, UA, XB, UB, Xa, Ua, Xb, Ub, x0A, x0B, T, inds = view_z_ABa([z; x0])
@@ -676,7 +677,8 @@ function attempt_solve(prob, init)
     try
         result = solve(prob, init)
     catch err
-        println(err)
+        print(err)
+        print(" ")
         success = false
     end
     (success, result)
@@ -700,17 +702,17 @@ function get_dummy_sol(x0; T, Δt, cd)
     x0A = x0[1:4]
     x0B = x0[5:8]
     xA = x0A
-    xA = x0B
+    xB = x0B
 
     for t in 1:T
         uA = [0; 0]
         uB = [0; 0]
         xA = pointmass(xA, uA; Δt, cd)
-        xb = pointmass(xA, uB; Δt, cd)
+        xB = pointmass(xB, uB; Δt, cd)
         append!(UA, uA)
         append!(UB, uB)
         append!(XA, xA)
-        append!(XB, xb)
+        append!(XB, xB)
     end
     (XA, UA, XB, UB)
 end
@@ -760,13 +762,16 @@ function solve_A_leader_seq(probs, x0; dummy_init_first=false)
             init[probs.A_leader.inds["s", 2]] = θ_nash[probs.nash.inds["s", 2]]
 
             success, θ = attempt_solve(probs.A_leader, init)
+        else
+            # try dummy init anyway
+            success, θ = attempt_solve(probs.A_leader, init)
         end
     end
 
     if success
         τ = probs.extract_AB(θ, probs.A_leader.x_inds, x0)
     elseif nash_success
-        τ = probs.extract_AB(θ, probs.nash.x_inds, x0)
+        τ = probs.extract_AB(θ_nash, probs.nash.x_inds, x0)
     else
         τ = (; XA, UA, XB, UB)
     end
@@ -775,6 +780,76 @@ function solve_A_leader_seq(probs, x0; dummy_init_first=false)
 end
 
 function solve_only_b_phantom_seq(probs, x0; dummy_init_first=false)
+    XA, UA, XB, UB = get_dummy_sol(x0; probs.params.T, probs.params.Δt, probs.params.cd)
+
+    init = zeros(probs.only_b_phantom.top_level.n)
+    init[probs.only_b_phantom.x_inds] = [XA; UA; XB; UB; XB; UB]
+    init = [init; x0]
+
+    if dummy_init_first
+        success, θ = attempt_solve(probs.only_b_phantom, init)
+    else
+        success = false
+    end
+
+    # initialize with nash and     
+    if !success
+        nash_init = zeros(probs.nash.top_level.n)
+        nash_init[probs.nash.x_inds] = [XA; UA; XB; UB]
+        nash_init = [nash_init; x0]
+        nash_success, θ_nash = attempt_solve(probs.nash, nash_init)
+
+        A_leader_init = zeros(probs.A_leader.top_level.n)
+        A_leader_init[probs.A_leader.x_inds] = [XA; UA; XB; UB]
+        A_leader_init = [A_leader_init; x0]
+
+        if nash_success
+            A_leader_init[probs.A_leader.x_inds] = θ_nash[probs.nash.x_inds]
+            A_leader_init[probs.A_leader.inds["λ", 1]] = θ_nash[probs.nash.inds["λ", 1]]
+            A_leader_init[probs.A_leader.inds["s", 1]] = θ_nash[probs.nash.inds["s", 1]]
+            A_leader_init[probs.A_leader.inds["λ", 2]] = θ_nash[probs.nash.inds["λ", 2]]
+            A_leader_init[probs.A_leader.inds["s", 2]] = θ_nash[probs.nash.inds["s", 2]]
+
+            A_leader_success, θ_A_leader = attempt_solve(probs.A_leader, A_leader_init)
+        else
+            # try dummy init anyway
+            A_leader_success, θ_A_leader = attempt_solve(probs.A_leader, A_leader_init)
+        end
+
+        if nash_success
+            T = probs.params.T
+            τdim = 6
+            init[1:2*τdim*T] .= θ_nash[probs.nash.x_inds]
+            #λdim = length(θ_nash[probs.nash.inds["λ", 1]])
+            #sdim = length(θ_nash[probs.nash.inds["s", 1]])
+            #init[probs.only_b_phantom.inds["λ", 1]] = θ_nash[probs.nash.inds["λ", 1]]
+            #init[probs.only_b_phantom.inds["s", 1]] = θ_nash[probs.nash.inds["s", 1]]
+            #init[probs.only_b_phantom.inds["λ", 2]] = θ_nash[probs.nash.inds["λ", 2]]
+            #init[probs.only_b_phantom.inds["s", 2]] = θ_nash[probs.nash.inds["s", 2]]
+            #init[probs.only_b_phantom.inds["λ", 3]] = θ_nash[probs.nash.inds["λ", 2]]
+            #init[probs.only_b_phantom.inds["s", 3]] = θ_nash[probs.nash.inds["s", 2]]
+        end
+
+        if A_leader_success
+            T = probs.params.T
+            τdim = 6
+            init[2*τdim*T:3*τdim*T] = θ_A_leader[τdim*T:2*τdim*T]
+        end
+
+        #@infiltrate
+        success, θ = attempt_solve(probs.only_b_phantom, init)
+    end
+
+    if success
+        τ = probs.extract_ABb(θ, probs.only_b_phantom.x_inds, x0)
+        #elseif nash_success
+        #    τ = probs.extract_ABb(θ_nash, probs.nash.x_inds, x0)
+    else
+        @infiltrate
+        τ = (; XA, UA, XB, UB, Xb=XB, Ub=UB)
+    end
+
+    (τ, success)
 end
 
 function solve_phantom_seq(probs, x0)
@@ -851,6 +926,10 @@ end
 #
 function solve_simulation(probs, T; x0)
     results = Dict()
+    status = "ok"
+
+    # for visualization purposes
+    τ = solve_nash_seq(probs, x0)
 
     for t = 1:T
         print("Sim timestep $t: ")
@@ -858,25 +937,39 @@ function solve_simulation(probs, T; x0)
 
         if is_x0_infeasible
             print(reason)
+            status = reason
+            # for visualization purposes
+            XA = τ.XA
+            XB = τ.XB
+            XA[1:4] = XA[9:12]
+            XB[1:4] = XB[9:12]
+            results[t] = (; x0, XA, XB, τ.UA, τ.UB, status)
             print("\n")
             break
         end
-        τ_nash, success_nash = solve_nash_seq(probs, x0)
-        if success_nash
-            print("nash success")
-        end
+
+        #τ_nash, success_nash = solve_nash_seq(probs, x0)
+        #if success_nash
+        #    print("nash success")
+        #end
+        #τ = τ_nash
 
         #τ_A_leader, success_A_leader = solve_A_leader_seq(probs, x0)
         #if success_A_leader
         #    print("A leader success")
         #end
-        
+        #τ = τ_A_leader
+
+        τ_only_b_phantom, success_only_b_phantom = solve_only_b_phantom_seq(probs, x0)
+        if success_only_b_phantom
+            print("only b phantom success")
+        end
         print("\n")
 
-        τ = τ_nash;
+        τ = τ_only_b_phantom
 
-        results[t] = (; x0, τ.XA, τ.XB, τ.UA, τ.UB)
-
+        #results[t] = (; x0, τ.XA, τ.XB, τ.UA, τ.UB, status)
+        results[t] = (; x0, τ.XA, τ.XB, τ.Xb, Xa=τ.XA, τ.UA, τ.UB, τ.Ub, status)
         x0 = apply_control(τ)
     end
     results

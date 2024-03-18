@@ -133,7 +133,7 @@ function show_me(XA, XB, Xa, Xb, x0; T=10, t=0, lat_max=2.5)
     end
 end
 
-function animate(probs, sim_results; save=false, filename="test.mp4", sleep_duration=1e-2, update_phantoms=false)
+function animate(probs, sim_results; save=false, filename="test.mp4", sleep_duration=1e-1, update_phantoms=false)
     rad = probs.params.r / 2
     lat = probs.params.lat_max + rad
     (f, ax, update) = visualize(; rad=rad, lat_max=lat)
