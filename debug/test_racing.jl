@@ -21,9 +21,9 @@ probs = setup(; T=10,
 x0 = [1.0, 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
 #x0 = [.5, 0, 0, 2, 0, 1, 0, 1.5]	
 
-sim_results = solve_simulation(probs, 1; x0, mode=9);
+sim_results = solve_simulation(probs, 10; x0, mode=9);
 
-animate(probs, sim_results; save=false);
+animate(probs, sim_results; save=false, mode=9);
 
 #(; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z) = solve_seq_adaptive(probs, x0);
 #(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);

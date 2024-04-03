@@ -121,6 +121,107 @@ function l(h; a=5.0, b=4.5)
     sigmoid(h, a, b) - sigmoid(0, a, b)
 end
 
+# kth degree polynomial least squares fit
+function get_kth_lsf_coef(xs, ys; k=3)
+    # https://mathworld.wolfram.com/LeastSquaresFittingPolynomial.html
+    # y = a₀ + a₁ x + ... + aₖ xᵏ
+    #     [  1  x₁ ... x₁ᵏ ]
+    # X = [ ... ...    ... ]
+    #     [  1  xₙ ...  xₙᵏ ]
+    # y = X a
+    # a = (XᵀX)-¹ Xᵀ y  
+    n = length(xs)
+    @assert length(ys) == n
+
+    X = zeros(n, k + 1)
+    X[:, 1] = ones(n)
+
+    for k in 1:k
+        X[:, k+1] = xs .^ k
+    end
+    inv(X' * X) * X' * ys # is inv ok?
+end
+
+# dict y pos->centerline x, road width
+# kth degree polynomial least squares fit
+# n>k samples 
+function get_road_single(ye; road=Dict(-0.5 => [0, 1], 0 => [0, 1], 0.5 => [1, 1], 1 => [0, 1], 1.5 => [0, 1], 2 => [0, 0.5], 2.5 => [0, 1], 3 => [0, 1]), n=8, k=6)
+    mykeys = road |> keys |> collect
+    sorted_inds = sortperm(((road |> keys |> collect) .- ye) .^ 2)
+    closest_inds = sorted_inds[1:n]
+
+    ys = zeros(n)
+    centers = zeros(n)
+    widths = zeros(n)
+
+    for (k, i) in zip(mykeys[closest_inds], 1:n)
+        ys[i] = k
+        centers[i], widths[i] = road[k]
+    end
+
+    centers_coef = get_kth_lsf_coef(ys, centers; k)
+    widths_coef = get_kth_lsf_coef(ys, widths; k)
+
+    center = sum(centers_coef[i+1] * ye .^ i for i in 0:k)
+    width = sum(widths_coef[i+1] * ye .^ i for i in 0:k)
+
+    # visualize for debug
+    ys_interp = ye-2:0.1:ye+2
+    centers_interp = map(ys_interp) do y
+        sum(centers_coef[i+1] .* y .^ i for i in 0:k)
+    end
+    widths_interp = map(ys_interp) do y
+        sum(widths_coef[i+1] .* y .^ i for i in 0:k)
+    end
+
+    #@infiltrate
+    f = Figure()
+    ax = Axis(f[1, 1], aspect=DataAspect())
+    GLMakie.scatter!(ax, centers .- widths, ys)
+    GLMakie.scatter!(ax, centers .+ widths, ys)
+    GLMakie.lines!(ax, centers_interp .- widths_interp, ys_interp)
+    GLMakie.lines!(ax, centers_interp .+ widths_interp, ys_interp)
+    display(f)
+
+    return (center, width)
+end
+
+function get_road(X; road=Dict(-0.5 => [0, 1], 0 => [0, 1], 0.5 => [1, 1], 1 => [0, 1], 1.5 => [0, 1], 2 => [0, 0.5], 2.5 => [0, 1], 3 => [0, 1]), n=4, k=3)
+
+    T = Int(length(X) / 4)
+    ys = mapreduce(vcat, 1:T) do t
+        @inbounds x = @view(X[(t-1)*4+1:t*4])
+        x[2]
+    end
+    #@infiltrate
+
+    r = mapreduce(vcat, ys) do y
+        mykeys = road |> keys |> collect
+        @infiltrate
+        # doesn't work with symbolics
+        sorted_inds = sortperm(((road |> keys |> collect) .- y[1]) .^ 2)
+        closest_inds = sorted_inds[1:n]
+    
+        chkpt_ys = zeros(n)
+        centers = zeros(n)
+        widths = zeros(n)
+    
+        for (k, i) in zip(mykeys[closest_inds], 1:n)
+            chkpt_ys[i] = k
+            centers[i], widths[i] = road[k]
+        end
+    
+        centers_coef = get_kth_lsf_coef(chkpt_ys, centers; k)
+        widths_coef = get_kth_lsf_coef(chkpt_ys, widths; k)
+    
+        center = sum(centers_coef[i+1] * ye .^ i for i in 0:k)
+        width = sum(widths_coef[i+1] * ye .^ i for i in 0:k)
+
+        [center, width]
+    end
+end
+
+
 # e = ego
 # o = opponent
 function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
@@ -141,6 +242,8 @@ function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_l
     lat_pos = @view(Xe[1:xdim:end])
     long_vel = @view(Xe[xdim:xdim:end])
 
+    road_center, road_width = get_road(Xe)
+
     [
         g_dyn
         g_col - l.(h_col) .- col_buffer
@@ -151,6 +254,7 @@ function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_l
         long_accel - u_max_4
         long_accel
         long_vel
+        lat_pos
         lat_pos
     ]
 end
