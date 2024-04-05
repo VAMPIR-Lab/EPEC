@@ -4,13 +4,14 @@
 const xdim = 4
 const udim = 2
 
-function view_Z(z)
+function view_z(z)
+    n_param = 14
     xdim = 4
     udim = 2
-    T = Int((length(z) - 2 * xdim) / (2 * (xdim + udim))) # 2 real players, 4 players total
+    T = Int((length(z) - n_param) / (2 * (xdim + udim))) # 2 real players, 4 players total
     indices = Dict()
     idx = 0
-    for (len, name) in zip([xdim * T, udim * T, xdim * T, udim * T, xdim, xdim], ["Xa", "Ua", "Xb", "Ub", "x0a", "x0b"])
+    for (len, name) in zip([xdim * T, udim * T, xdim * T, udim * T, xdim, xdim, 2, 2, 1, 1], ["Xa", "Ua", "Xb", "Ub", "x0a", "x0b", "ca", "cb", "r2a", "r2b"])
         indices[name] = (idx+1):(idx+len)
         idx += len
     end
@@ -20,7 +21,11 @@ function view_Z(z)
     @inbounds Ub = @view(z[indices["Ub"]])
     @inbounds x0a = @view(z[indices["x0a"]])
     @inbounds x0b = @view(z[indices["x0b"]])
-    (T, Xa, Ua, Xb, Ub, x0a, x0b, indices)
+    @inbounds ca = @view(z[indices["ca"]])
+    @inbounds cb = @view(z[indices["cb"]])
+    @inbounds r2a = @view(z[indices["r2a"]])
+    @inbounds r2b = @view(z[indices["r2b"]])
+    (T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, r2a, r2b, indices)
 end
 
 # each player wants to make forward progress and stay in center of lane
@@ -41,15 +46,15 @@ function f_ego(T, Xe, Ue, Xo; α1, α2, β)
 end
 
 # P1 wants to make forward progress and stay in center of lane.
-function f1(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
+function f1(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
 
     f_ego(T, Xa, Ua, Xb; α1, α2, β)
 end
 
 # P2 wants to make forward progress and stay in center of lane.
-function f2(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
+function f2(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
 
     f_ego(T, Xb, Ub, Xa; α1, α2, β)
 end
@@ -121,110 +126,62 @@ function l(h; a=5.0, b=4.5)
     sigmoid(h, a, b) - sigmoid(0, a, b)
 end
 
-# kth degree polynomial least squares fit
-function get_kth_lsf_coef(xs, ys; k=3)
-    # https://mathworld.wolfram.com/LeastSquaresFittingPolynomial.html
-    # y = a₀ + a₁ x + ... + aₖ xᵏ
-    #     [  1  x₁ ... x₁ᵏ ]
-    # X = [ ... ...    ... ]
-    #     [  1  xₙ ...  xₙᵏ ]
-    # y = X a
-    # a = (XᵀX)-¹ Xᵀ y  
-    n = length(xs)
-    @assert length(ys) == n
-
-    X = zeros(n, k + 1)
-    X[:, 1] = ones(n)
-
-    for k in 1:k
-        X[:, k+1] = xs .^ k
+# road defined by checkpoints: y=>x
+function get_road(y_ego; road=Dict(0 => 0, 1 => 0, 2 => 0.1, 3 => 0.1, 4 => 2, 5 => 0, 6 => -1, 7 => 0, 8 => 0), displaying=false)
+    # choose closest 3 based on shortest vertical distance
+    n = 3
+    road_ys = road |> keys |> collect
+    sortedkeys = sortperm((road_ys .- y_ego) .^ 2)
+    closest_inds = sortedkeys[1:n]
+    ys = road_ys[closest_inds]
+    xs = mapreduce(vcat, ys) do y
+        road[y]
     end
-    inv(X' * X) * X' * ys # is inv ok?
-end
-
-# dict y pos->centerline x, road width
-# kth degree polynomial least squares fit
-# n>k samples 
-function get_road_single(ye; road=Dict(-0.5 => [0, 1], 0 => [0, 1], 0.5 => [1, 1], 1 => [0, 1], 1.5 => [0, 1], 2 => [0, 0.5], 2.5 => [0, 1], 3 => [0, 1]), n=8, k=6)
-    mykeys = road |> keys |> collect
-    sorted_inds = sortperm(((road |> keys |> collect) .- ye) .^ 2)
-    closest_inds = sorted_inds[1:n]
-
-    ys = zeros(n)
-    centers = zeros(n)
-    widths = zeros(n)
-
-    for (k, i) in zip(mykeys[closest_inds], 1:n)
-        ys[i] = k
-        centers[i], widths[i] = road[k]
+    A = hcat(2 * xs, 2 * ys, ones(n))
+    b = mapreduce(vcat, zip(xs, ys)) do (x, y)
+        (x^2 + y^2)
     end
 
-    centers_coef = get_kth_lsf_coef(ys, centers; k)
-    widths_coef = get_kth_lsf_coef(ys, widths; k)
+    # if user makes a mistake and provides three colinear points, "regularize" by perturbation 
+    if cond(A) > 1e6
+        A[1] += randn() * 1e-2
+    end
 
-    center = sum(centers_coef[i+1] * ye .^ i for i in 0:k)
-    width = sum(widths_coef[i+1] * ye .^ i for i in 0:k)
+    c₁, c₂, r̂ = A \ b
+    c = [c₁, c₂]
+    r² = r̂ + c' * c
 
     # visualize for debug
-    ys_interp = ye-2:0.1:ye+2
-    centers_interp = map(ys_interp) do y
-        sum(centers_coef[i+1] .* y .^ i for i in 0:k)
-    end
-    widths_interp = map(ys_interp) do y
-        sum(widths_coef[i+1] .* y .^ i for i in 0:k)
-    end
-
-    #@infiltrate
-    f = Figure()
-    ax = Axis(f[1, 1], aspect=DataAspect())
-    GLMakie.scatter!(ax, centers .- widths, ys)
-    GLMakie.scatter!(ax, centers .+ widths, ys)
-    GLMakie.lines!(ax, centers_interp .- widths_interp, ys_interp)
-    GLMakie.lines!(ax, centers_interp .+ widths_interp, ys_interp)
-    display(f)
-
-    return (center, width)
-end
-
-function get_road(X; road=Dict(-0.5 => [0, 1], 0 => [0, 1], 0.5 => [1, 1], 1 => [0, 1], 1.5 => [0, 1], 2 => [0, 0.5], 2.5 => [0, 1], 3 => [0, 1]), n=4, k=3)
-
-    T = Int(length(X) / 4)
-    ys = mapreduce(vcat, 1:T) do t
-        @inbounds x = @view(X[(t-1)*4+1:t*4])
-        x[2]
-    end
-    #@infiltrate
-
-    r = mapreduce(vcat, ys) do y
-        mykeys = road |> keys |> collect
-        @infiltrate
-        # doesn't work with symbolics
-        sorted_inds = sortperm(((road |> keys |> collect) .- y[1]) .^ 2)
-        closest_inds = sorted_inds[1:n]
-    
-        chkpt_ys = zeros(n)
-        centers = zeros(n)
-        widths = zeros(n)
-    
-        for (k, i) in zip(mykeys[closest_inds], 1:n)
-            chkpt_ys[i] = k
-            centers[i], widths[i] = road[k]
+    if displaying
+        r = sqrt(r²)
+        d = 0.2
+        circ = mapreduce(vcat, 0:0.1:(2π+0.1)) do t
+            c[1] + r * cos(t), c[2] + r * sin(t)
         end
-    
-        centers_coef = get_kth_lsf_coef(chkpt_ys, centers; k)
-        widths_coef = get_kth_lsf_coef(chkpt_ys, widths; k)
-    
-        center = sum(centers_coef[i+1] * ye .^ i for i in 0:k)
-        width = sum(widths_coef[i+1] * ye .^ i for i in 0:k)
+        circ_left = mapreduce(vcat, 0:0.1:(2π+0.1)) do t
+            c[1] + (r + d) * cos(t), c[2] + (r + d) * sin(t)
+        end
+        circ_right = mapreduce(vcat, 0:0.1:(2π+0.1)) do t
+            c[1] + (r - d) * cos(t), c[2] + (r - d) * sin(t)
+        end
 
-        [center, width]
+        f = Figure()
+        ax = Axis(f[1, 1], aspect=DataAspect())
+        GLMakie.scatter!(ax, xs, ys)
+        GLMakie.scatter!(ax, c[1], c[2])
+        GLMakie.lines!(ax, circ)
+        GLMakie.lines!(ax, circ_left)
+        GLMakie.lines!(ax, circ_right)
+        display(f)
     end
+
+    (c, r²)
 end
 
 
 # e = ego
 # o = opponent
-function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+function g_ego(Xe, Ue, Xo, x0e, ce, r2e; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
     xdim = 4
     udim = 2
 
@@ -237,12 +194,11 @@ function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_l
         u_max_drafting,
         box_length,
         box_width)
-    long_accel = @view(Ue[udim:udim:end])
+    long_accel = @view(Ue[2:udim:end])
     lat_accel = @view(Ue[1:udim:end])
     lat_pos = @view(Xe[1:xdim:end])
-    long_vel = @view(Xe[xdim:xdim:end])
-
-    road_center, road_width = get_road(Xe)
+    #long_pos = @view(Xe[2:xdim:end])
+    long_vel = @view(Xe[4:xdim:end])
 
     [
         g_dyn
@@ -255,20 +211,19 @@ function g_ego(Xe, Ue, Xo, x0e; Δt, r, cd, u_max_nominal, u_max_drafting, box_l
         long_accel
         long_vel
         lat_pos
-        lat_pos
     ]
 end
 
-function g1(Z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
+function g1(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, r2a, r2b = view_z(z)
 
-    g_ego(Xa, Ua, Xb, x0a; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    g_ego(Xa, Ua, Xb, x0a, ca, r2a; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
 end
 
-function g2(Z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_Z(Z)
+function g2(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, r2a, r2b = view_z(z)
 
-    g_ego(Xb, Ub, Xa, x0b; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    g_ego(Xb, Ub, Xa, x0b, cb, r2b; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
 end
 
 function setup(; T=10,
@@ -284,6 +239,7 @@ function setup(; T=10,
     box_length=5.0,
     box_width=2.0,
     lat_max=2.0,
+    d=1.0,
     u_max_braking=2 * u_max_drafting,
     min_long_vel=-5.0,
     col_buffer=r / 5)
@@ -293,11 +249,12 @@ function setup(; T=10,
 
     f1_pinned = (z -> f1(z; α1, α2, α3, β))
     f2_pinned = (z -> f2(z; α1, α2, α3, β))
-    g1_pinned = (z -> g1(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
-    g2_pinned = (z -> g2(z; Δt, r, cd, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    g1_pinned = (z -> g1(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
+    g2_pinned = (z -> g2(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer))
 
-    OP1 = OptimizationProblem(12 * T + 8, 1:6*T, f1_pinned, g1_pinned, lb, ub)
-    OP2 = OptimizationProblem(12 * T + 8, 1:6*T, f2_pinned, g2_pinned, lb, ub)
+    n_param = 14 # 8 x0, 4 c, 2 r2
+    OP1 = OptimizationProblem(12 * T + n_param, 1:6*T, f1_pinned, g1_pinned, lb, ub)
+    OP2 = OptimizationProblem(12 * T + n_param, 1:6*T, f2_pinned, g2_pinned, lb, ub)
 
     sp_a = EPEC.create_epec((1, 0), OP1)
     gnep = [OP1 OP2]
@@ -305,26 +262,17 @@ function setup(; T=10,
 
 
     function extract_gnep(θ)
-        Z = θ[gnep.x_inds]
-        @inbounds Xa = @view(Z[1:4*T])
-        @inbounds Ua = @view(Z[4*T+1:6*T])
-        @inbounds Xb = @view(Z[6*T+1:10*T])
-        @inbounds Ub = @view(Z[10*T+1:12*T])
-        @inbounds x0a = @view(Z[12*T+1:12*T+4])
-        @inbounds x0b = @view(Z[12*T+5:12*T+8])
-        (; Xa, Ua, Xb, Ub, x0a, x0b)
+        z = θ[gnep.x_inds]
+        T, Xa, Ua, Xb, Ub = view_z([z; zeros(n_param)])
+        (; Xa, Ua, Xb, Ub)
     end
     function extract_bilevel(θ)
-        Z = θ[bilevel.x_inds]
-        @inbounds Xa = @view(Z[1:4*T])
-        @inbounds Ua = @view(Z[4*T+1:6*T])
-        @inbounds Xb = @view(Z[6*T+1:10*T])
-        @inbounds Ub = @view(Z[10*T+1:12*T])
-        @inbounds x0a = @view(Z[12*T+1:12*T+4])
-        @inbounds x0b = @view(Z[12*T+5:12*T+8])
-        (; Xa, Ua, Xb, Ub, x0a, x0b)
+        z = θ[bilevel.x_inds]
+        T, Xa, Ua, Xb, Ub = view_z([z; zeros(n_param)])
+        (; Xa, Ua, Xb, Ub)
     end
-    problems = (; sp_a, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, α3, β, box_length, box_width, min_long_vel, col_buffer))
+
+    problems = (; sp_a, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, d, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, α3, β, box_length, box_width, min_long_vel, col_buffer))
 end
 
 function attempt_solve(prob, init)
@@ -339,7 +287,7 @@ function attempt_solve(prob, init)
     (success, result)
 end
 
-function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false, try_bilevel_first=false, try_gnep_first=true)
+function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false, try_bilevel_first=false, try_gnep_first=true)
     T = probs.params.T
     Δt = probs.params.Δt
     cd = probs.params.cd
@@ -361,8 +309,13 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         append!(Xa, xa)
         append!(Xb, xb)
     end
+
+    # compute road
+    ca, r2a = get_road(x0a[2]; road)
+    cb, r2b = get_road(x0b[2]; road)
+
     # dummy init
-    Z = (; Xa, Ua, Xb, Ub, x0a, x0b)
+    Z = (; Xa, Ua, Xb, Ub)
     valid_Z = Dict()
     valid_Z[8] = Z
     #dummy_init = zeros(probs.gnep.top_level.n)
@@ -411,9 +364,9 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
     # 8. dummy
     if try_bilevel_first && want_bilevel
         # initialized from dummy:
-        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+        bilevel_init = zeros(probs.bilevel.top_level.n)
         bilevel_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-        bilevel_init = [bilevel_init; x0]
+        bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
         #@info "(1) bilevel..."
         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
@@ -431,7 +384,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         # initialized from dummy:
         gnep_init = zeros(probs.gnep.top_level.n)
         gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-        gnep_init = [gnep_init; x0]
+        gnep_init = [gnep_init; x0; ca; cb; r2a; r2b]
         #@info "(5) gnep..."
         gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
@@ -441,13 +394,13 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
 
             if want_bilevel
                 # initialized from gnep:
-                bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+                bilevel_init = zeros(probs.bilevel.top_level.n)
                 bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
                 bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
                 bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
                 bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
                 bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-                bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
+                bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
                 #@info "(2) gnep->bilevel..."
                 bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
@@ -464,16 +417,18 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
     end
 
     if want_sp
+        xu_dim = 6
+        n_param = 14
         # initialized from dummy:
         # [!] need to be changed in problems.jl so this isn't such a mess
         # !!! 348 vs 568 breaks it
         # !!! Ordering of x_w changes because:
         # 1p: [x1=>1:60 λ1,s1=>61:280, w=>281:348]
         # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568
-        sp_a_init = zeros(probs.gnep.top_level.n)
+        sp_a_init = zeros(probs.sp_a.top_level.n)
         sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
-        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+6*T] = [Xb; Ub]
-        sp_a_init[probs.sp_a.top_level.n+6*T+1:probs.sp_a.top_level.n+6*T+8] = x0 # right now parameters are expected to be contiguous
+        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+xu_dim*T] = [Xb; Ub]
+        sp_a_init[probs.sp_a.top_level.n+xu_dim*T+1:probs.sp_a.top_level.n+xu_dim*T+n_param] = [x0; ca; cb; r2a; r2b] # right now parameters are expected to be contiguous
         #sp_a_init = [sp_a_init; x0]; 
 
         #@info "(7a) sp_a..."
@@ -482,10 +437,10 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         # if it fails:
         #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # swapping b for a:
-        sp_b_init = zeros(probs.gnep.top_level.n)
+        sp_b_init = zeros(probs.sp_a.top_level.n)
         sp_b_init[probs.sp_a.x_inds] = [Xb; Ub]
         sp_b_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+6*T] = [Xa; Ua]
-        sp_b_init[probs.sp_a.top_level.n+6*T+1:probs.sp_a.top_level.n+6*T+8] = [x0[5:8]; x0[1:4]]
+        sp_b_init[probs.sp_a.top_level.n+xu_dim*T+1:probs.sp_a.top_level.n+xu_dim*T+n_param] = [x0[5:8]; x0[1:4]; cb; ca; r2b; r2a]
         #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
 
         #@info "(7b) sp_b..."
@@ -497,7 +452,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         if only_want_sp
             sp_success = θ_sp_a_success # assume ego is P1
         else
-            sp_success = θ_sp_a_success && θ_sp_b_success # consider sp success to be bilateral succes
+            sp_success = θ_sp_a_success && θ_sp_b_success # consider sp success to be bilateral success
         end
 
         if sp_success
@@ -522,7 +477,7 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
                 gnep_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
                 gnep_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
                 gnep_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
-                gnep_init = [gnep_init; x0]
+                gnep_init = [gnep_init; x0; ca; cb; r2a; r2b]
                 #@info "(6) sp->gnep..."
                 gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
@@ -533,13 +488,13 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
 
                     if want_bilevel
                         # initialized from gnep which was initialized from sp:
-                        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+                        bilevel_init = zeros(probs.bilevel.top_level.n)
                         bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
                         bilevel_init[probs.bilevel.inds["λ", 1]] = θ_gnep[probs.gnep.inds["λ", 1]]
                         bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
                         bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
                         bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-                        bilevel_init[probs.bilevel.inds["w", 0]] = θ_gnep[probs.gnep.inds["w", 0]]
+                        bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
                         #@info "(3) sp->gnep->bilevel..."
                         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
@@ -551,13 +506,13 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
                 else
                     if want_bilevel
                         # initialized from sp:
-                        bilevel_init = zeros(probs.bilevel.top_level.n + probs.bilevel.top_level.n_param)
+                        bilevel_init = zeros(probs.bilevel.top_level.n)
                         bilevel_init[probs.bilevel.x_inds] = θ_gnep[probs.gnep.x_inds]
                         bilevel_init[probs.bilevel.inds["λ", 1]] = θ_sp_a[probs.gnep.inds["λ", 1]]
                         bilevel_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
                         bilevel_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
                         bilevel_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
-                        bilevel_init[probs.bilevel.inds["w", 0]] = x0
+                        bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
                         #bilevel_init = [bilevel_init; x0]
                         #@info "(4) sp->bilevel..."
                         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
@@ -581,15 +536,11 @@ function solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false,
         print("Fail $lowest_preference ")
     end
 
-
     P1 = [Z.Xa[1:4:end] Z.Xa[2:4:end] Z.Xa[3:4:end] Z.Xa[4:4:end]]
     U1 = [Z.Ua[1:2:end] Z.Ua[2:2:end]]
     P2 = [Z.Xb[1:4:end] Z.Xb[2:4:end] Z.Xb[3:4:end] Z.Xb[4:4:end]]
     U2 = [Z.Ub[1:2:end] Z.Ub[2:2:end]]
 
-    #gd = col(Z.Xa, Z.Xb, probs.params.r)
-    #h = responsibility(Z.Xa, Z.Xb)
-    #gd_both = [gd - l.(h) gd - l.(-h) gd]
     (; P1, P2, U1, U2, lowest_preference, sorted_Z)
 end
 
@@ -602,7 +553,7 @@ end
 #	  P2-Leader 4   5   6 
 #   P2-Follower 7   8   9		    10
 #
-function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], mode=1)
+function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict(0 => 0, 1 => 0, 2 => 0.1), mode=1)
     lat_max = probs.params.lat_max
     status = "ok"
     x0a = x0[1:4]
@@ -640,38 +591,38 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], mode=1)
         x0_swapped[5:8] = x0[1:4]
 
         if mode == 1 # P1 SP, P2 SP
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
-            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=true)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=true)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = b_res.P1
             r_U2 = b_res.U1
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
         elseif mode == 3 # P1 NE, P2 NE
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = a_res.P2
             r_U2 = a_res.U2
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=a_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=a_res.sorted_Z)
         elseif mode == 9 # P1 Leader, P2 Follower
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = a_res.P2
             r_U2 = a_res.U2
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=a_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=a_res.sorted_Z)
         elseif mode == 2 # P1 SP, P2 NE
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
-            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = b_res.P2
             r_U2 = b_res.U2
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
         elseif mode == 4 # P1 SP, P2 Leader
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
-            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = b_res.P1
@@ -679,40 +630,40 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], mode=1)
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
             r
         elseif mode == 5 # P1 NE, P2 Leader
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
-            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = b_res.P1
             r_U2 = b_res.U1
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
         elseif mode == 6 # P1 Leader, P2 Leader
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
-            b_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = b_res.P1
             r_U2 = b_res.U1
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
         elseif mode == 7 # P1 SP, P2 Follower
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=true)
-            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=true)
+            b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = b_res.P2
             r_U2 = b_res.U2
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
         elseif mode == 8 # P1 NE, P2 Follower 
-            a_res = solve_seq_adaptive(probs, x0; only_want_gnep=true, only_want_sp=false)
-            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = b_res.P2
             r_U2 = b_res.U2
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
         elseif mode == 10 # P1 Follower, P2 Follower 
-            a_res = solve_seq_adaptive(probs, x0_swapped; only_want_gnep=false, only_want_sp=false)
-            b_res = solve_seq_adaptive(probs, x0; only_want_gnep=false, only_want_sp=false)
+            a_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)
+            b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P2
             r_U1 = a_res.U2
             r_P2 = b_res.P2

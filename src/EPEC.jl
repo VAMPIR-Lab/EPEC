@@ -10,8 +10,9 @@ using Infiltrator
     
 
 include("problems.jl")
-include("../examples/simple_racing.jl")
+include("../racing/racing.jl")
+include("../racing/visualize_racing.jl")
 
-export OptimizationProblem, solve
+export OptimizationProblem, solve, setup, solve_simulation, animate
 
 end # module EPEC
