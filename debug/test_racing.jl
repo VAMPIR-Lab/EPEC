@@ -13,7 +13,7 @@ probs = setup(; T=10,
     α3=1e-1,
     β=1e-1, #.5, # sensitive to high values
     cd=0.2, #0.25,
-    d=1.0,
+    d=2.0,
     u_max_nominal=1.0,
     u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
     box_length=5.0,
@@ -23,7 +23,7 @@ probs = setup(; T=10,
 x0 = [1.0, 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
 #x0 = [.5, 0, 0, 2, 0, 1, 0, 1.5]	
 
-road = Dict(3 => 0, 6 => 0, 9 => -0.1, 12 => -0.1, 15 => 0.1, 18 => 0.2);
+road = Dict(3 => 0, 6 => 0, 9 => -0.5, 12 => -0.5, 15 => 0.5, 18 => 0.5);
 sim_results = solve_simulation(probs, 50; x0, road, mode=9);
 
 animate(probs, sim_results; save=false, mode=9, road);
