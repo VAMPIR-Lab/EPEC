@@ -117,8 +117,8 @@ function visualize(road; T=10, rad=0.5, lat=6.0, d=1.0)
     a_rot = map(atan, @lift(($(XA[0][2]) - $(XA[1][2]))), @lift(($(XA[0][1]) - $(XA[1][1]))))
     b_rot = map(atan, @lift(($(XB[0][2]) - $(XB[1][2]))), @lift(($(XB[0][1]) - $(XB[1][1]))))
 
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XA[0][1])), @lift([0.0, 0.0] .+ $(XA[0][2])), rotations=@lift($(a_rot) .+ pi), marker=carsymbol, markersize=60, color=:blue)
-    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XB[0][1])), @lift([0.0, 0.0] .+ $(XB[0][2])), rotations=@lift($(b_rot) .+ pi), marker=carsymbol, markersize=60, color=:red)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XA[0][1])), @lift([0.0, 0.0] .+ $(XA[0][2])), rotations=@lift($(a_rot) .+ pi), marker=carsymbol, markersize=40, color=:blue)
+    GLMakie.scatter!(ax, @lift([0.0, 0.0] .+ $(XB[0][1])), @lift([0.0, 0.0] .+ $(XB[0][2])), rotations=@lift($(b_rot) .+ pi), marker=carsymbol, markersize=40, color=:red)
 
     for t in 1:T
         GLMakie.lines!(ax, @lift(circ_x .+ $(XA[t][1])), @lift(circ_y .+ $(XA[t][2])), color=:blue, linewidth=2, linestyle=:dash)

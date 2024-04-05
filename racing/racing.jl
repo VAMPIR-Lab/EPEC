@@ -40,7 +40,9 @@ function f_ego(T, Xe, Ue, Xo; α1, α2, β)
         @inbounds xa = @view(Xe[xdim*(t-1)+1:xdim*t])
         @inbounds xb = @view(Xo[xdim*(t-1)+1:xdim*t])
         @inbounds ua = @view(Ue[udim*(t-1)+1:udim*t])
-        cost += α1 * xa[1]^2 + α2 * ua' * ua + β * (xb[4] - xa[4])
+        long_vel_a = xa[3] * sin(xa[4])
+        long_vel_b = xb[3] * sin(xb[4])
+        cost += α1 * xa[1]^2 + α2 * ua' * ua + β * (long_vel_b - long_vel_a)
     end
     cost
 end
@@ -69,6 +71,20 @@ function pointmass(x, u, Δt, cd)
         x[4] + Δt * a2]
 end
 
+function simplecraft(x, u, Δt, cd; k1=1.0, k2=1.0)
+    # x = [p_lat, p_long, v, θ]
+    a = k1 * u[1] - cd * x[3] # tangential acceleration
+    ω = k2 * u[2] # bearing rate
+    v_next = x[3] + Δt * a # next velocity
+    θ_next = x[4] + Δt * ω # next bearing
+
+    # backwards euler
+    [x[1] + Δt * v_next * cos(θ_next),
+        x[2] + Δt * v_next * sin(θ_next),
+        v_next,
+        θ_next]
+end
+
 function dyn(X, U, x0, Δt, cd)
     xdim = 4
     udim = 2
@@ -77,7 +93,7 @@ function dyn(X, U, x0, Δt, cd)
     mapreduce(vcat, 1:T) do t
         xx = X[(t-1)*xdim+1:t*xdim]
         u = U[(t-1)*udim+1:t*udim]
-        diff = xx - pointmass(x, u, Δt, cd)
+        diff = xx - simplecraft(x, u, Δt, cd)
         x = xx
         diff
     end
@@ -222,22 +238,24 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
         u_max_drafting,
         box_length,
         box_width)
-    long_accel = @view(Ue[2:udim:end])
-    lat_accel = @view(Ue[1:udim:end])
-    long_vel = @view(Xe[4:xdim:end])
+
+    as = @view(Ue[1:udim:end])
+    ωs = @view(Ue[2:udim:end])
+    #V = @view(Xe[3:xdim:end])
+    #Θ = @view(Xe[4:xdim:end])
+    #long_vel = V .* sin(Θ)
 
     [
         g_dyn
         g_col - l.(h_col) .- col_buffer
         g_road_left
         g_road_right
-        lat_accel
-        long_accel - u_max_1
-        long_accel - u_max_2
-        long_accel - u_max_3
-        long_accel - u_max_4
-        long_accel
-        long_vel
+        as
+        ωs
+        #long_accel - u_max_1
+        #long_accel - u_max_2
+        #long_accel - u_max_3
+        #long_accel - u_max_4
     ]
 end
 
@@ -272,8 +290,8 @@ function setup(; T=10,
     col_buffer=r / 5)
     xdim = 4
 
-    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, xdim * T); fill(-u_max_braking, T); fill(min_long_vel, T)]
-    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T)]
+    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-π, T)]
+    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(u_max_nominal, T); fill(π, T)]
 
     f1_pinned = (z -> f1(z; α1, α2, α3, β))
     f2_pinned = (z -> f2(z; α1, α2, α3, β))
@@ -330,8 +348,8 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
     for t in 1:T
         ua = [0; 0]#-cd * xa[3:4]
         ub = [0; 0]#-cd * xb[3:4]
-        xa = pointmass(xa, ua, Δt, cd)
-        xb = pointmass(xb, ub, Δt, cd)
+        xa = simplecraft(xa, ua, Δt, cd)
+        xb = simplecraft(xb, ub, Δt, cd)
         append!(Ua, ua)
         append!(Ub, ub)
         append!(Xa, xa)
@@ -739,8 +757,8 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
         ua[2] = minimum([maximum([ua[2], -probs.params.u_max_braking]), ua_maxes[1][1], ua_maxes[2][1], ua_maxes[3][1], ua_maxes[4][1]])
         ub[2] = minimum([maximum([ub[2], -probs.params.u_max_braking]), ub_maxes[1][1], ub_maxes[2][1], ub_maxes[3][1], ub_maxes[4][1]])
 
-        x0a = pointmass(xa, ua, probs.params.Δt, probs.params.cd)
-        x0b = pointmass(xb, ub, probs.params.Δt, probs.params.cd)
+        x0a = simplecraft(xa, ua, probs.params.Δt, probs.params.cd)
+        x0b = simplecraft(xb, ub, probs.params.Δt, probs.params.cd)
 
         results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.a_pref, r.b_pref)
         x0 = [x0a; x0b]

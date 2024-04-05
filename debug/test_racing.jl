@@ -18,15 +18,15 @@ probs = setup(; T=10,
     u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
     box_length=5.0,
     box_width=2.0,
-    lat_max=2.5);
+    lat_max=4.5);
 
-x0 = [1.0, 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
-#x0 = [.5, 0, 0, 2, 0, 1, 0, 1.5]	
+#x0 = [1.0, 3, 0, 1, -1, 2, 0, 1.5] # it's helpful to start from an initial velocity difference for oscillating behavior but so sensitive
+x0 = [.5, 0, 1, π/2, 0, 1, 1, π/2]	
 
-road = Dict(3 => 0, 6 => 0, 9 => -0.5, 12 => -0.5, 15 => 0.5, 18 => 0.5);
-sim_results = solve_simulation(probs, 50; x0, road, mode=9);
+road = Dict(3 => 0, 6 => 0, 9 => -1, 12 => -2.5, 15 => -2.5, 18 => -1, 21 => 0, 24 => .5, 27 => 0);
+sim_results = solve_simulation(probs, 50; x0, road, mode=3);
 
-animate(probs, sim_results; save=false, mode=9, road);
+animate(probs, sim_results; save=false, mode=3, road);
 
 #(; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z) = solve_seq_adaptive(probs, x0);
 #(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);
