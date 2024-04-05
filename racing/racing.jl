@@ -11,7 +11,7 @@ function view_z(z)
     T = Int((length(z) - n_param) / (2 * (xdim + udim))) # 2 real players, 4 players total
     indices = Dict()
     idx = 0
-    for (len, name) in zip([xdim * T, udim * T, xdim * T, udim * T, xdim, xdim, 2, 2, 1, 1], ["Xa", "Ua", "Xb", "Ub", "x0a", "x0b", "ca", "cb", "r2a", "r2b"])
+    for (len, name) in zip([xdim * T, udim * T, xdim * T, udim * T, xdim, xdim, 2, 2, 1, 1], ["Xa", "Ua", "Xb", "Ub", "x0a", "x0b", "ca", "cb", "ra", "rb"])
         indices[name] = (idx+1):(idx+len)
         idx += len
     end
@@ -23,9 +23,9 @@ function view_z(z)
     @inbounds x0b = @view(z[indices["x0b"]])
     @inbounds ca = @view(z[indices["ca"]])
     @inbounds cb = @view(z[indices["cb"]])
-    @inbounds r2a = @view(z[indices["r2a"]])
-    @inbounds r2b = @view(z[indices["r2b"]])
-    (T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, r2a, r2b, indices)
+    @inbounds ra = @view(z[indices["ra"]])
+    @inbounds rb = @view(z[indices["rb"]])
+    (T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb, indices)
 end
 
 # each player wants to make forward progress and stay in center of lane
@@ -70,11 +70,13 @@ function pointmass(x, u, Δt, cd)
 end
 
 function dyn(X, U, x0, Δt, cd)
-    T = Int(length(X) / 4)
+    xdim = 4
+    udim = 2
+    T = Int(length(X) / xdim)
     x = x0
     mapreduce(vcat, 1:T) do t
-        xx = X[(t-1)*4+1:t*4]
-        u = U[(t-1)*2+1:t*2]
+        xx = X[(t-1)*xdim+1:t*xdim]
+        u = U[(t-1)*udim+1:t*udim]
         diff = xx - pointmass(x, u, Δt, cd)
         x = xx
         diff
@@ -82,29 +84,32 @@ function dyn(X, U, x0, Δt, cd)
 end
 
 function col(Xa, Xb, r)
-    T = Int(length(Xa) / 4)
+    xdim = 4
+    T = Int(length(Xa) / xdim)
     mapreduce(vcat, 1:T) do t
-        @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
-        @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
+        @inbounds xa = @view(Xa[(t-1)*xdim+1:t*xdim])
+        @inbounds xb = @view(Xb[(t-1)*xdim+1:t*xdim])
         delta = xa[1:2] - xb[1:2]
         [delta' * delta - r^2,]
     end
 end
 
 function responsibility(Xa, Xb)
-    T = Int(length(Xa) / 4)
+    xdim = 4
+    T = Int(length(Xa) / xdim)
     mapreduce(vcat, 1:T) do t
-        @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
-        @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
+        @inbounds xa = @view(Xa[(t-1)*xdim+1:t*xdim])
+        @inbounds xb = @view(Xb[(t-1)*xdim+1:t*xdim])
         h = [xb[2] - xa[2],] # h is positive when xa is behind xb in second coordinate
     end
 end
 
 function accel_bounds(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
-    T = Int(length(Xa) / 4)
+    xdim = 4
+    T = Int(length(Xa) / xdim)
     d = mapreduce(vcat, 1:T) do t
-        @inbounds xa = @view(Xa[(t-1)*4+1:t*4])
-        @inbounds xb = @view(Xb[(t-1)*4+1:t*4])
+        @inbounds xa = @view(Xa[(t-1)*xdim+1:t*xdim])
+        @inbounds xb = @view(Xb[(t-1)*xdim+1:t*xdim])
         [xa[1] - xb[1] xa[2] - xb[2]]
     end
     @assert size(d) == (T, 2)
@@ -150,6 +155,7 @@ function get_road(y_ego; road=Dict(0 => 0, 1 => 0, 2 => 0.1, 3 => 0.1, 4 => 2, 5
     c₁, c₂, r̂ = A \ b
     c = [c₁, c₂]
     r² = r̂ + c' * c
+    r = sqrt(r²)
 
     # visualize for debug
     if displaying
@@ -175,18 +181,40 @@ function get_road(y_ego; road=Dict(0 => 0, 1 => 0, 2 => 0.1, 3 => 0.1, 4 => 2, 5
         display(f)
     end
 
-    (c, r²)
+    (c, r)
 end
 
+# road constraint
+function road_left(X, c, r; d)
+    xdim = 4
+    T = Int(length(X) / xdim)
+    mapreduce(vcat, 1:T) do t
+        @inbounds x = @view(X[(t-1)*4+1:t*4])
+        p = x[1:2]
+        [(p - c)' * (p - c) - (r[1] - d)^2,]
+    end
+end
+
+function road_right(X, c, r; d)
+    xdim = 4
+    T = Int(length(X) / xdim)
+    mapreduce(vcat, 1:T) do t
+        @inbounds x = @view(X[(t-1)*4+1:t*4])
+        p = x[1:2]
+        [(r[1] + d)^2 - (p - c)' * (p - c),]
+    end
+end
 
 # e = ego
 # o = opponent
-function g_ego(Xe, Ue, Xo, x0e, ce, r2e; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
     xdim = 4
     udim = 2
 
     g_dyn = dyn(Xe, Ue, x0e, Δt, cd)
     g_col = col(Xe, Xo, r)
+    g_road_left = road_left(Xe, ce, re; d)
+    g_road_right = road_right(Xe, ce, re; d)
     h_col = responsibility(Xe, Xo)
     u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds(Xe,
         Xo,
@@ -196,13 +224,13 @@ function g_ego(Xe, Ue, Xo, x0e, ce, r2e; Δt, r, cd, d, u_max_nominal, u_max_dra
         box_width)
     long_accel = @view(Ue[2:udim:end])
     lat_accel = @view(Ue[1:udim:end])
-    lat_pos = @view(Xe[1:xdim:end])
-    #long_pos = @view(Xe[2:xdim:end])
     long_vel = @view(Xe[4:xdim:end])
 
     [
         g_dyn
         g_col - l.(h_col) .- col_buffer
+        g_road_left
+        g_road_right
         lat_accel
         long_accel - u_max_1
         long_accel - u_max_2
@@ -210,20 +238,19 @@ function g_ego(Xe, Ue, Xo, x0e, ce, r2e; Δt, r, cd, d, u_max_nominal, u_max_dra
         long_accel - u_max_4
         long_accel
         long_vel
-        lat_pos
     ]
 end
 
 function g1(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, r2a, r2b = view_z(z)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    g_ego(Xa, Ua, Xb, x0a, ca, r2a; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    g_ego(Xa, Ua, Xb, x0a, ca, ra; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
 end
 
 function g2(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
-    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, r2a, r2b = view_z(z)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    g_ego(Xb, Ub, Xa, x0b, cb, r2b; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    g_ego(Xb, Ub, Xa, x0b, cb, rb; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
 end
 
 function setup(; T=10,
@@ -243,9 +270,10 @@ function setup(; T=10,
     u_max_braking=2 * u_max_drafting,
     min_long_vel=-5.0,
     col_buffer=r / 5)
+    xdim = 4
 
-    lb = [fill(0.0, 4 * T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, 4 * T); fill(-u_max_braking, T); fill(min_long_vel, T); fill(-lat_max, T)]
-    ub = [fill(0.0, 4 * T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, 4 * T); fill(Inf, T); fill(Inf, T); fill(+lat_max, T)]
+    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, xdim * T); fill(-u_max_braking, T); fill(min_long_vel, T)]
+    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(+u_max_nominal, T); fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T)]
 
     f1_pinned = (z -> f1(z; α1, α2, α3, β))
     f2_pinned = (z -> f2(z; α1, α2, α3, β))
@@ -281,7 +309,7 @@ function attempt_solve(prob, init)
     try
         result = solve(prob, init)
     catch err
-        println(err)
+        #println(err)
         success = false
     end
     (success, result)
@@ -311,8 +339,8 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
     end
 
     # compute road
-    ca, r2a = get_road(x0a[2]; road)
-    cb, r2b = get_road(x0b[2]; road)
+    ca, ra = get_road(x0a[2]; road)
+    cb, rb = get_road(x0b[2]; road)
 
     # dummy init
     Z = (; Xa, Ua, Xb, Ub)
@@ -366,7 +394,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
         # initialized from dummy:
         bilevel_init = zeros(probs.bilevel.top_level.n)
         bilevel_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-        bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
+        bilevel_init = [bilevel_init; x0; ca; cb; ra; rb]
         #@info "(1) bilevel..."
         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
@@ -384,7 +412,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
         # initialized from dummy:
         gnep_init = zeros(probs.gnep.top_level.n)
         gnep_init[probs.gnep.x_inds] = [Xa; Ua; Xb; Ub]
-        gnep_init = [gnep_init; x0; ca; cb; r2a; r2b]
+        gnep_init = [gnep_init; x0; ca; cb; ra; rb]
         #@info "(5) gnep..."
         gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
@@ -400,7 +428,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
                 bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
                 bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
                 bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-                bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
+                bilevel_init = [bilevel_init; x0; ca; cb; ra; rb]
                 #@info "(2) gnep->bilevel..."
                 bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
@@ -427,8 +455,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
         # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568
         sp_a_init = zeros(probs.sp_a.top_level.n)
         sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
-        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+xu_dim*T] = [Xb; Ub]
-        sp_a_init[probs.sp_a.top_level.n+xu_dim*T+1:probs.sp_a.top_level.n+xu_dim*T+n_param] = [x0; ca; cb; r2a; r2b] # right now parameters are expected to be contiguous
+        sp_a_init = [sp_a_init; Xb; Ub; x0; ca; cb; ra; rb] # right now parameters are expected to be contiguous
         #sp_a_init = [sp_a_init; x0]; 
 
         #@info "(7a) sp_a..."
@@ -439,8 +466,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
         # swapping b for a:
         sp_b_init = zeros(probs.sp_a.top_level.n)
         sp_b_init[probs.sp_a.x_inds] = [Xb; Ub]
-        sp_b_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+6*T] = [Xa; Ua]
-        sp_b_init[probs.sp_a.top_level.n+xu_dim*T+1:probs.sp_a.top_level.n+xu_dim*T+n_param] = [x0[5:8]; x0[1:4]; cb; ca; r2b; r2a]
+        sp_b_init = [sp_b_init; Xa; Ua; x0[5:8]; x0[1:4]; cb; ca; rb; ra]
         #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
 
         #@info "(7b) sp_b..."
@@ -477,7 +503,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
                 gnep_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
                 gnep_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
                 gnep_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
-                gnep_init = [gnep_init; x0; ca; cb; r2a; r2b]
+                gnep_init = [gnep_init; x0; ca; cb; ra; rb]
                 #@info "(6) sp->gnep..."
                 gnep_success, θ_gnep = attempt_solve(probs.gnep, gnep_init)
 
@@ -494,7 +520,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
                         bilevel_init[probs.bilevel.inds["s", 1]] = θ_gnep[probs.gnep.inds["s", 1]]
                         bilevel_init[probs.bilevel.inds["λ", 2]] = θ_gnep[probs.gnep.inds["λ", 2]]
                         bilevel_init[probs.bilevel.inds["s", 2]] = θ_gnep[probs.gnep.inds["s", 2]]
-                        bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
+                        bilevel_init = [bilevel_init; x0; ca; cb; ra; rb]
                         #@info "(3) sp->gnep->bilevel..."
                         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
 
@@ -512,7 +538,7 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
                         bilevel_init[probs.bilevel.inds["s", 1]] = θ_sp_a[probs.gnep.inds["s", 1]]
                         bilevel_init[probs.bilevel.inds["λ", 2]] = θ_sp_b[probs.gnep.inds["λ", 1]]
                         bilevel_init[probs.bilevel.inds["s", 2]] = θ_sp_b[probs.gnep.inds["s", 1]]
-                        bilevel_init = [bilevel_init; x0; ca; cb; r2a; r2b]
+                        bilevel_init = [bilevel_init; x0; ca; cb; ra; rb]
                         #bilevel_init = [bilevel_init; x0]
                         #@info "(4) sp->bilevel..."
                         bilevel_success, θ_bilevel = attempt_solve(probs.bilevel, bilevel_init)
