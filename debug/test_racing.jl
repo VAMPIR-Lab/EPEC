@@ -24,9 +24,9 @@ probs = setup(; T=10,
 x0 = [.5, 0, 1, π/2, 0, 1, 1, π/2]	
 
 road = Dict(3 => 0, 6 => 0, 9 => -1, 12 => -2.5, 15 => -2.5, 18 => -1, 21 => 0, 24 => .5, 27 => 0);
-sim_results = solve_simulation(probs, 50; x0, road, mode=3);
+sim_results = solve_simulation(probs, 50; x0, road, mode=9);
 
-animate(probs, sim_results; save=false, mode=3, road);
+animate(probs, sim_results; save=false, mode=9, road);
 
 #(; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z) = solve_seq_adaptive(probs, x0);
 #(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);

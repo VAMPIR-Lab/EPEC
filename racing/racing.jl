@@ -120,13 +120,20 @@ function responsibility(Xa, Xb)
     end
 end
 
-function accel_bounds(Xa, Xb, u_max_nominal, u_max_drafting, box_length, box_width)
+function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_width)
     xdim = 4
-    T = Int(length(Xa) / xdim)
+    T = Int(length(X) / xdim)
     d = mapreduce(vcat, 1:T) do t
-        @inbounds xa = @view(Xa[(t-1)*xdim+1:t*xdim])
-        @inbounds xb = @view(Xb[(t-1)*xdim+1:t*xdim])
-        [xa[1] - xb[1] xa[2] - xb[2]]
+        @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
+        @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
+        # basis change
+        θ = x[4]
+        # passive transformation matrix
+        R = [cos(θ) sin(θ)
+            -sin(θ) cos(θ)]
+        dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]];
+
+        [dd[1] dd[2]]
     end
     @assert size(d) == (T, 2)
     du = u_max_drafting - u_max_nominal
@@ -241,9 +248,6 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
 
     as = @view(Ue[1:udim:end])
     ωs = @view(Ue[2:udim:end])
-    #V = @view(Xe[3:xdim:end])
-    #Θ = @view(Xe[4:xdim:end])
-    #long_vel = V .* sin(Θ)
 
     [
         g_dyn
@@ -252,10 +256,10 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
         g_road_right
         as
         ωs
-        #long_accel - u_max_1
-        #long_accel - u_max_2
-        #long_accel - u_max_3
-        #long_accel - u_max_4
+        as - u_max_1
+        as - u_max_2
+        as - u_max_3
+        as - u_max_4
     ]
 end
 
@@ -290,8 +294,8 @@ function setup(; T=10,
     col_buffer=r / 5)
     xdim = 4
 
-    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-π, T)]
-    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(u_max_nominal, T); fill(π, T)]
+    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-π, T); fill(-Inf, xdim * T)]
+    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(π, T); fill(0.0, xdim * T)]
 
     f1_pinned = (z -> f1(z; α1, α2, α3, β))
     f2_pinned = (z -> f2(z; α1, α2, α3, β))
