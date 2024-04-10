@@ -116,6 +116,7 @@ function responsibility(Xa, Xb)
     mapreduce(vcat, 1:T) do t
         @inbounds xa = @view(Xa[(t-1)*xdim+1:t*xdim])
         @inbounds xb = @view(Xb[(t-1)*xdim+1:t*xdim])
+
         h = [xb[2] - xa[2],] # h is positive when xa is behind xb in second coordinate
     end
 end
@@ -126,21 +127,31 @@ function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_w
     d = mapreduce(vcat, 1:T) do t
         @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
         @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
-        # basis change
-        θ = x[4]
-        # passive transformation matrix
-        R = [cos(θ) sin(θ)
-            -sin(θ) cos(θ)]
-        dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]];
+        # basis change, the drafting box is attached to opponent's heading
+        θ = x_opp[4]
+        # passive transformation matrix, unity if θ=π/2
+        R = [cos(θ - π / 2) sin(θ - π / 2)
+            -sin(θ - π / 2) cos(θ - π / 2)]
+        dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]]
 
         [dd[1] dd[2]]
     end
+
+    Δθ = mapreduce(vcat, 1:T) do t
+        @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
+        @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
+        x[4] - x_opp[4]
+    end 
+
     @assert size(d) == (T, 2)
     du = u_max_drafting - u_max_nominal
-    u_max_1 = du * sigmoid.(d[:, 2] .+ box_length, 10.0, 0) .+ u_max_nominal
-    u_max_2 = du * sigmoid.(-d[:, 2], 10.0, 0) .+ u_max_nominal
-    u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
-    u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
+    # objective: if ego is in opponent's drafting box set u_max to u_max_drafting, otherwise set to u_max_nominal
+    # bonus objective: du = 0 if the players move in perpendicular directions
+    @infiltrate
+    u_max_1 = du * sigmoid.(d[:, 2] .+ box_length, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
+    u_max_2 = du * sigmoid.(-d[:, 2], 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
+    u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
+    u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
     (u_max_1, u_max_2, u_max_3, u_max_4)
 end
 
@@ -246,8 +257,9 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
         box_length,
         box_width)
 
-    as = @view(Ue[1:udim:end])
-    ωs = @view(Ue[2:udim:end])
+    as = @view(Ue[1:udim:end]) # rate of tangential velocity
+    ωs = @view(Ue[2:udim:end]) # rate of heading 
+    heading = @view(Ue[2:udim:end])
 
     [
         g_dyn
@@ -255,7 +267,8 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
         g_road_left
         g_road_right
         as
-        ωs
+        #ωs
+        #as
         as - u_max_1
         as - u_max_2
         as - u_max_3
@@ -294,8 +307,11 @@ function setup(; T=10,
     col_buffer=r / 5)
     xdim = 4
 
-    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-π, T); fill(-Inf, xdim * T)]
-    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(π, T); fill(0.0, xdim * T)]
+    #lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-π, T); fill(0, T)]
+    #ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(π, T); fill(u_max_nominal, T)]
+    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, xdim * T)]
+    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(0.0, xdim * T)]
+
 
     f1_pinned = (z -> f1(z; α1, α2, α3, β))
     f2_pinned = (z -> f2(z; α1, α2, α3, β))
