@@ -31,18 +31,18 @@ end
 # each player wants to make forward progress and stay in center of lane
 # e = ego
 # o = opponent
-function f_ego(T, Xe, Ue, Xo; α1, α2, β)
+function f_ego(T, X, U, X_opp; α1, α2, β)
     xdim = 4
     udim = 2
     cost = 0.0
 
     for t in 1:T
-        @inbounds xa = @view(Xe[xdim*(t-1)+1:xdim*t])
-        @inbounds xb = @view(Xo[xdim*(t-1)+1:xdim*t])
-        @inbounds ua = @view(Ue[udim*(t-1)+1:udim*t])
-        long_vel_a = xa[3] * sin(xa[4])
-        long_vel_b = xb[3] * sin(xb[4])
-        cost += α1 * xa[1]^2 + α2 * ua' * ua + β * (long_vel_b - long_vel_a)
+        @inbounds x = @view(X[xdim*(t-1)+1:xdim*t])
+        @inbounds x_opp = @view(X_opp[xdim*(t-1)+1:xdim*t])
+        @inbounds u = @view(U[udim*(t-1)+1:udim*t])
+        long_vel_a = x[3] * sin(x[4])
+        long_vel_b = x_opp[3] * sin(x_opp[4])
+        cost += α1 * x[1]^2 + α2 * u' * u + β * (long_vel_b - long_vel_a)
     end
     cost
 end
@@ -74,9 +74,9 @@ end
 function simplecraft(x, u, Δt, cd; k1=1.0, k2=1.0)
     # x = [p_lat, p_long, v, θ]
     a = k1 * u[1] - cd * x[3] # tangential acceleration
-    ω = k2 * u[2] # bearing rate
+    ω = k2 * u[2] # heading rate
     v_next = x[3] + Δt * a # next velocity
-    θ_next = x[4] + Δt * ω # next bearing
+    θ_next = x[4] + Δt * ω # next heading
 
     # backwards euler
     [x[1] + Δt * v_next * cos(θ_next),
@@ -99,14 +99,14 @@ function dyn(X, U, x0, Δt, cd)
     end
 end
 
-function col(Xa, Xb, r)
+function col(Xa, Xb, r; col_buffer=0.)
     xdim = 4
     T = Int(length(Xa) / xdim)
     mapreduce(vcat, 1:T) do t
         @inbounds xa = @view(Xa[(t-1)*xdim+1:t*xdim])
         @inbounds xb = @view(Xb[(t-1)*xdim+1:t*xdim])
         delta = xa[1:2] - xb[1:2]
-        [delta' * delta - r^2,]
+        [delta' * delta - (r + col_buffer)^2,]
     end
 end
 
@@ -127,27 +127,29 @@ function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_w
     d = mapreduce(vcat, 1:T) do t
         @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
         @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
-        # basis change, the drafting box is attached to opponent's heading
-        θ = x_opp[4]
-        # passive transformation matrix, unity if θ=π/2
-        R = [cos(θ - π / 2) sin(θ - π / 2)
-            -sin(θ - π / 2) cos(θ - π / 2)]
-        dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]]
+        # this breaks it 2024-04-10 bilevel, assuming somehow leader can exploit rotating the drafting area to deny it:
+        ## basis change, the drafting box is attached to opponent's heading
+        #θ = x_opp[4]
+        ## passive transformation matrix, unity if θ=π/2
+        #R = [cos(θ - π / 2) sin(θ - π / 2)
+        #    -sin(θ - π / 2) cos(θ - π / 2)]
+        #dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]]
 
-        [dd[1] dd[2]]
+        #[dd[1] dd[2]]
+        [x[1] - x_opp[1] x[2] - x_opp[2]]
     end
 
     Δθ = mapreduce(vcat, 1:T) do t
         @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
         @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
         x[4] - x_opp[4]
-    end 
+        #[0,]
+    end
 
     @assert size(d) == (T, 2)
     du = u_max_drafting - u_max_nominal
     # objective: if ego is in opponent's drafting box set u_max to u_max_drafting, otherwise set to u_max_nominal
     # bonus objective: du = 0 if the players move in perpendicular directions
-    @infiltrate
     u_max_1 = du * sigmoid.(d[:, 2] .+ box_length, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
     u_max_2 = du * sigmoid.(-d[:, 2], 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
     u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
@@ -219,23 +221,23 @@ function get_road(y_ego; road=Dict(0 => 0, 1 => 0, 2 => 0.1, 3 => 0.1, 4 => 2, 5
 end
 
 # road constraint
-function road_left(X, c, r; d)
+function road_left(X, c, r; d, col_buffer=0.)
     xdim = 4
     T = Int(length(X) / xdim)
     mapreduce(vcat, 1:T) do t
         @inbounds x = @view(X[(t-1)*4+1:t*4])
         p = x[1:2]
-        [(p - c)' * (p - c) - (r[1] - d)^2,]
+        [(p - c)' * (p - c) - (r[1] - d + col_buffer)^2,] # ≥ 0
     end
 end
 
-function road_right(X, c, r; d)
+function road_right(X, c, r; d, col_buffer=0.)
     xdim = 4
     T = Int(length(X) / xdim)
     mapreduce(vcat, 1:T) do t
         @inbounds x = @view(X[(t-1)*4+1:t*4])
         p = x[1:2]
-        [(r[1] + d)^2 - (p - c)' * (p - c),]
+        [(r[1] + d - col_buffer)^2 - (p - c)' * (p - c),] # ≥ 0
     end
 end
 
@@ -246,9 +248,9 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
     udim = 2
 
     g_dyn = dyn(Xe, Ue, x0e, Δt, cd)
-    g_col = col(Xe, Xo, r)
-    g_road_left = road_left(Xe, ce, re; d)
-    g_road_right = road_right(Xe, ce, re; d)
+    g_col = col(Xe, Xo, r; col_buffer)
+    g_road_left = road_left(Xe, ce, re; d, col_buffer)
+    g_road_right = road_right(Xe, ce, re; d, col_buffer)
     h_col = responsibility(Xe, Xo)
     u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds(Xe,
         Xo,
@@ -259,16 +261,18 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
 
     as = @view(Ue[1:udim:end]) # rate of tangential velocity
     ωs = @view(Ue[2:udim:end]) # rate of heading 
-    heading = @view(Ue[2:udim:end])
+    speed = @view(Xe[3:xdim:end])
+    heading = @view(Xe[4:xdim:end])
 
     [
         g_dyn
-        g_col - l.(h_col) .- col_buffer
+        g_col - l.(h_col)
         g_road_left
         g_road_right
+        speed
+        heading
         as
-        #ωs
-        #as
+        ωs
         as - u_max_1
         as - u_max_2
         as - u_max_3
@@ -300,17 +304,36 @@ function setup(; T=10,
     u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
     box_length=5.0,
     box_width=2.0,
-    lat_max=2.0,
+    lat_max=2.0, # deprecated
     d=1.0,
-    u_max_braking=2 * u_max_drafting,
-    min_long_vel=-5.0,
-    col_buffer=r / 5)
+    u_max_braking=u_max_drafting,
+    min_speed=-1.0,
+    max_heading_offset=π / 2,
+    max_heading_rate=1.0,
+    col_buffer=r / 4)
     xdim = 4
 
-    #lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-π, T); fill(0, T)]
-    #ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(π, T); fill(u_max_nominal, T)]
-    lb = [fill(0.0, xdim * T); fill(0.0, T); fill(0.0, T); fill(0.0, T); fill(-u_max_nominal, T); fill(-Inf, xdim * T)]
-    ub = [fill(0.0, xdim * T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(Inf, T); fill(0.0, xdim * T)]
+    lb = [fill(0.0, xdim * T)
+        fill(0.0, T)
+        fill(0.0, T)
+        fill(0.0, T)
+        fill(min_speed, T)
+        fill(π / 2 - max_heading_offset, T)
+        fill(-u_max_braking, T)
+        fill(-max_heading_rate, T)
+        fill(-Inf, xdim * T)
+    ]
+
+    ub = [fill(0.0, xdim * T)
+        fill(Inf, T)
+        fill(Inf, T)
+        fill(Inf, T)
+        fill(Inf, T)
+        fill(π / 2 + max_heading_offset, T)
+        fill(Inf, T)
+        fill(max_heading_rate, T)
+        fill(0.0, xdim * T)
+    ]
 
 
     f1_pinned = (z -> f1(z; α1, α2, α3, β))
@@ -338,7 +361,7 @@ function setup(; T=10,
         (; Xa, Ua, Xb, Ub)
     end
 
-    problems = (; sp_a, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, d, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, α3, β, box_length, box_width, min_long_vel, col_buffer))
+    problems = (; sp_a, gnep, bilevel, extract_gnep, extract_bilevel, OP1, OP2, params=(; T, Δt, r, cd, d, lat_max, u_max_nominal, u_max_drafting, u_max_braking, α1, α2, α3, β, box_length, box_width, min_speed, max_heading_offset, col_buffer))
 end
 
 function attempt_solve(prob, init)
@@ -622,22 +645,33 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
     status = "ok"
     x0a = x0[1:4]
     x0b = x0[5:8]
+    P1_buffer = repeat(x0', 10, 1)
+    P2_buffer = repeat(x0', 10, 1)
 
     results = Dict()
     for t = 1:T
         #@info "Sim timestep $t:"
         print("Sim timestep $t: ")
         # check initial condition feasibility
+        ca, ra = get_road(x0a[2]; road)
+        cb, rb = get_road(x0b[2]; road)
+        pa = x0a[1:2]
+        pb = x0b[1:2]
+        d = probs.params.d
         is_x0_infeasible = false
 
         if col(x0a, x0b, probs.params.r)[1] <= 0 - 1e-4
             status = "Infeasible initial condition: Collision"
             is_x0_infeasible = true
-        elseif x0a[1] < -lat_max - 1e-4 || x0a[1] > lat_max + 1e-4 || x0b[1] < -lat_max - 1e-4 || x0b[1] > lat_max + 1e-4
+        elseif (pa - ca)' * (pa - ca) - (ra[1] - d)^2 < -1e-4 || (ra[1] + d)^2 - (pa - ca)' * (pa - ca) < -1e-4 ||
+               (pb - cb)' * (pb - cb) - (rb[1] - d)^2 < -1e-4 || (rb[1] + d)^2 - (pb - cb)' * (pb - cb) < -1e-4
             status = "Infeasible initial condition: Out of lanes"
             is_x0_infeasible = true
-        elseif x0a[4] < probs.params.min_long_vel - 1e-4 || x0b[4] < probs.params.min_long_vel - 1e-4
-            status = "Infeasible initial condition: Invalid velocity"
+        elseif x0a[3] < probs.params.min_speed - 1e-4 || x0b[3] < probs.params.min_speed - 1e-4
+            status = "Infeasible initial condition: Invalid speed"
+            is_x0_infeasible = true
+        elseif x0a[4] < π / 2 - probs.params.max_heading_offset - 1e-4 || x0a[4] > π / 2 + probs.params.max_heading_offset + 1e-4 || x0b[4] < π / 2 - probs.params.max_heading_offset - 1e-4 || x0b[4] > π / 2 + probs.params.max_heading_offset + 1e-4
+            status = "Infeasible initial condition: Invalid heading"
             is_x0_infeasible = true
         end
 
@@ -645,7 +679,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             # currently status isn't saved
             print(status)
             print("\n")
-            results[t] = (; x0, P1=repeat(x0', 10, 1), P2=repeat(x0', 10, 1))
+            results[t] = (; x0, P1=P1_buffer, P2=P2_buffer)
             break
         end
 
@@ -661,21 +695,21 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U1
             r_P2 = b_res.P1
             r_U2 = b_res.U1
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 3 # P1 NE, P2 NE
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = a_res.P2
             r_U2 = a_res.U2
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=a_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=a_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 9 # P1 Leader, P2 Follower
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
             r_P1 = a_res.P1
             r_U1 = a_res.U1
             r_P2 = a_res.P2
             r_U2 = a_res.U2
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=a_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=a_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 2 # P1 SP, P2 NE
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=true)
             b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
@@ -683,7 +717,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U1
             r_P2 = b_res.P2
             r_U2 = b_res.U2
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 4 # P1 SP, P2 Leader
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=true)
             b_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)
@@ -691,7 +725,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U1
             r_P2 = b_res.P1
             r_U2 = b_res.U1
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
             r
         elseif mode == 5 # P1 NE, P2 Leader
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
@@ -700,7 +734,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U1
             r_P2 = b_res.P1
             r_U2 = b_res.U1
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 6 # P1 Leader, P2 Leader
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
             b_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)
@@ -708,7 +742,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U1
             r_P2 = b_res.P1
             r_U2 = b_res.U1
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 7 # P1 SP, P2 Follower
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=true)
             b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
@@ -716,7 +750,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U1
             r_P2 = b_res.P2
             r_U2 = b_res.U2
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 8 # P1 NE, P2 Follower 
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
             b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
@@ -724,7 +758,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U1
             r_P2 = b_res.P2
             r_U2 = b_res.U2
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         elseif mode == 10 # P1 Follower, P2 Follower 
             a_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)
             b_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=false)
@@ -732,7 +766,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_U1 = a_res.U2
             r_P2 = b_res.P2
             r_U2 = b_res.U2
-            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2, a_pref=a_res.lowest_preference, b_pref=b_res.lowest_preference, a_sorted_Z=a_res.sorted_Z, b_sorted_Z=b_res.sorted_Z)
+            r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
         end
 
         print("\n")
@@ -772,15 +806,17 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             probs.params.box_length,
             probs.params.box_width)
 
-        ua[1] = minimum([maximum([ua[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
-        ub[1] = minimum([maximum([ub[1], -probs.params.u_max_nominal]), probs.params.u_max_nominal])
-        ua[2] = minimum([maximum([ua[2], -probs.params.u_max_braking]), ua_maxes[1][1], ua_maxes[2][1], ua_maxes[3][1], ua_maxes[4][1]])
-        ub[2] = minimum([maximum([ub[2], -probs.params.u_max_braking]), ub_maxes[1][1], ub_maxes[2][1], ub_maxes[3][1], ub_maxes[4][1]])
+        ua[1] = minimum([maximum([ua[1], -probs.params.u_max_braking]), ua_maxes[1][1], ua_maxes[2][1], ua_maxes[3][1], ua_maxes[4][1]])
+        ub[1] = minimum([maximum([ub[1], -probs.params.u_max_braking]), ub_maxes[1][1], ub_maxes[2][1], ub_maxes[3][1], ub_maxes[4][1]])
+        ua[2] = minimum([maximum([ua[2], π / 2 + probs.params.max_heading_offset]), π / 2 - probs.params.max_heading_offset])
+        ua[2] = minimum([maximum([ub[2], π / 2 + probs.params.max_heading_offset]), π / 2 - probs.params.max_heading_offset])
 
         x0a = simplecraft(xa, ua, probs.params.Δt, probs.params.cd)
         x0b = simplecraft(xb, ub, probs.params.Δt, probs.params.cd)
 
-        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2, r.a_pref, r.b_pref)
+        results[t] = (; x0, r.P1, r.P2, r.U1, r.U2)
+        P1_buffer = vcat(r.P1[3:end, :], r.P1[9:end, :]) # for visualization if x0 is not feasible in the next sim step
+        P2_buffer = vcat(r.P2[3:end, :], r.P2[9:end, :])
         x0 = [x0a; x0b]
     end
     results
