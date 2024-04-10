@@ -99,7 +99,7 @@ function dyn(X, U, x0, Δt, cd)
     end
 end
 
-function col(Xa, Xb, r; col_buffer=0.)
+function col(Xa, Xb, r; col_buffer=0.0)
     xdim = 4
     T = Int(length(Xa) / xdim)
     mapreduce(vcat, 1:T) do t
@@ -121,29 +121,32 @@ function responsibility(Xa, Xb)
     end
 end
 
-function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_width)
+function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_width, c_road, x0)
     xdim = 4
     T = Int(length(X) / xdim)
     d = mapreduce(vcat, 1:T) do t
         @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
         @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
-        # this breaks it 2024-04-10 bilevel, assuming somehow leader can exploit rotating the drafting area to deny it:
-        ## basis change, the drafting box is attached to opponent's heading
-        #θ = x_opp[4]
-        ## passive transformation matrix, unity if θ=π/2
-        #R = [cos(θ - π / 2) sin(θ - π / 2)
-        #    -sin(θ - π / 2) cos(θ - π / 2)]
-        #dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]]
 
-        #[dd[1] dd[2]]
-        [x[1] - x_opp[1] x[2] - x_opp[2]]
+        #θ = atan(x_opp[2] - c_road[2], x_opp[1] - c_road[1]) + π / 2 # road curvature & opponent -- does not work
+        #θ = atan(x[2] - c_road[2], x[1] - c_road[1]) + π / 2 # road curvature & ego -- does not work
+        #θ = x_opp[4] # opponent -- this breaks bilevel 2024-04-10
+        #θ = x[4] # ego -- does not work
+        θ = atan(x0[2] - c_road[2], x0[1] - c_road[1]) + π / 2 # road curvature & ego x0 
+        #θ = π / 2 # constant (works)
+
+        # basis change using passive transformation matrix, unity if θ=π/2
+        R = [cos(θ - π / 2) sin(θ - π / 2)
+            -sin(θ - π / 2) cos(θ - π / 2)]
+        dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]]
+
+        [dd[1] dd[2]]
     end
 
     Δθ = mapreduce(vcat, 1:T) do t
         @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
         @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
         x[4] - x_opp[4]
-        #[0,]
     end
 
     @assert size(d) == (T, 2)
@@ -221,7 +224,7 @@ function get_road(y_ego; road=Dict(0 => 0, 1 => 0, 2 => 0.1, 3 => 0.1, 4 => 2, 5
 end
 
 # road constraint
-function road_left(X, c, r; d, col_buffer=0.)
+function road_left(X, c, r; d, col_buffer=0.0)
     xdim = 4
     T = Int(length(X) / xdim)
     mapreduce(vcat, 1:T) do t
@@ -231,7 +234,7 @@ function road_left(X, c, r; d, col_buffer=0.)
     end
 end
 
-function road_right(X, c, r; d, col_buffer=0.)
+function road_right(X, c, r; d, col_buffer=0.0)
     xdim = 4
     T = Int(length(X) / xdim)
     mapreduce(vcat, 1:T) do t
@@ -257,8 +260,9 @@ function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_draf
         u_max_nominal,
         u_max_drafting,
         box_length,
-        box_width)
-
+        box_width,
+        ce,
+        x0e)
     as = @view(Ue[1:udim:end]) # rate of tangential velocity
     ωs = @view(Ue[2:udim:end]) # rate of heading 
     speed = @view(Xe[3:xdim:end])
