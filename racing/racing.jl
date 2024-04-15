@@ -121,7 +121,7 @@ function responsibility(Xa, Xb)
     end
 end
 
-function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_width, c_road, x0)
+function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_width, c_opp, x0_opp)
     xdim = 4
     T = Int(length(X) / xdim)
     d = mapreduce(vcat, 1:T) do t
@@ -132,15 +132,17 @@ function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_w
         #θ = atan(x[2] - c_road[2], x[1] - c_road[1]) + π / 2 # road curvature & ego -- does not work
         #θ = x_opp[4] # opponent -- this breaks bilevel 2024-04-10
         #θ = x[4] # ego -- does not work
-        θ = atan(x0[2] - c_road[2], x0[1] - c_road[1]) + π / 2 # road curvature & ego x0 
+        #θ = atan(x0_opp[2] - c_opp[2], x0_opp[1] - c_opp[1]) + π / 2 # road curvature & opponent x0 
+        #θ = x0_opp[4]
         #θ = π / 2 # constant (works)
-
+        #θ = π / 2 + .5 # constant (does not work?)
         # basis change using passive transformation matrix, unity if θ=π/2
-        R = [cos(θ - π / 2) sin(θ - π / 2)
-            -sin(θ - π / 2) cos(θ - π / 2)]
-        dd = R * [x[1] - x_opp[1]; x[2] - x_opp[2]]
-
-        [dd[1] dd[2]]
+        #R = [cos(θ - π / 2) sin(θ - π / 2)
+        #    -sin(θ - π / 2) cos(θ - π / 2)]
+        #dd = R * (x[1:2] - x_opp[1:2])
+        #[dd[1] dd[2]]
+        #[R[1,:]'*(x[1:2] - x_opp[1:2]) R[2,:]'*(x[1:2] - x_opp[1:2])]
+        [x[1] - x_opp[1] x[2] - x_opp[2]]
     end
 
     Δθ = mapreduce(vcat, 1:T) do t
@@ -246,27 +248,27 @@ end
 
 # e = ego
 # o = opponent
-function g_ego(Xe, Ue, Xo, x0e, ce, re; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+function g_ego(X, U, X_opp, x0, x0_opp, c_road, r_road, c_opp; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
     xdim = 4
     udim = 2
 
-    g_dyn = dyn(Xe, Ue, x0e, Δt, cd)
-    g_col = col(Xe, Xo, r; col_buffer)
-    g_road_left = road_left(Xe, ce, re; d, col_buffer)
-    g_road_right = road_right(Xe, ce, re; d, col_buffer)
-    h_col = responsibility(Xe, Xo)
-    u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds(Xe,
-        Xo,
+    g_dyn = dyn(X, U, x0, Δt, cd)
+    g_col = col(X, X_opp, r; col_buffer)
+    g_road_left = road_left(X, c_road, r_road; d, col_buffer)
+    g_road_right = road_right(X, c_road, r_road; d, col_buffer)
+    h_col = responsibility(X, X_opp)
+    u_max_1, u_max_2, u_max_3, u_max_4 = accel_bounds(X,
+        X_opp,
         u_max_nominal,
         u_max_drafting,
         box_length,
         box_width,
-        ce,
-        x0e)
-    as = @view(Ue[1:udim:end]) # rate of tangential velocity
-    ωs = @view(Ue[2:udim:end]) # rate of heading 
-    speed = @view(Xe[3:xdim:end])
-    heading = @view(Xe[4:xdim:end])
+        c_opp,
+        x0_opp)
+    as = @view(U[1:udim:end]) # rate of tangential velocity
+    ωs = @view(U[2:udim:end]) # rate of heading 
+    speed = @view(X[3:xdim:end])
+    heading = @view(X[4:xdim:end])
 
     [
         g_dyn
@@ -287,13 +289,13 @@ end
 function g1(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
     T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    g_ego(Xa, Ua, Xb, x0a, ca, ra; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    g_ego(Xa, Ua, Xb, x0a, x0b, ca, ra, cb; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
 end
 
 function g2(z; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
     T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    g_ego(Xb, Ub, Xa, x0b, cb, rb; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
+    g_ego(Xb, Ub, Xa, x0b, x0a, cb, rb, ca; Δt, r, cd, d, u_max_nominal, u_max_drafting, box_length, box_width, col_buffer)
 end
 
 function setup(; T=10,
@@ -801,14 +803,18 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             probs.params.u_max_nominal,
             probs.params.u_max_drafting,
             probs.params.box_length,
-            probs.params.box_width)
+            probs.params.box_width,
+            ca,
+            x0)
 
         ub_maxes = accel_bounds(xb,
             xa,
             probs.params.u_max_nominal,
             probs.params.u_max_drafting,
             probs.params.box_length,
-            probs.params.box_width)
+            probs.params.box_width,
+            cb,
+            x0)
 
         ua[1] = minimum([maximum([ua[1], -probs.params.u_max_braking]), ua_maxes[1][1], ua_maxes[2][1], ua_maxes[3][1], ua_maxes[4][1]])
         ub[1] = minimum([maximum([ub[1], -probs.params.u_max_braking]), ub_maxes[1][1], ub_maxes[2][1], ub_maxes[3][1], ub_maxes[4][1]])

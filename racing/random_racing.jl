@@ -23,11 +23,13 @@ probs = setup(; T=10,
     α3=1e-1,
     β=1e-1, #.5, # sensitive to high values
     cd=0.2, #0.25,
+    d=1.5, # actual road width (±)
     u_max_nominal=1.0,
     u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
     box_length=5.0,
     box_width=2.0,
-    lat_max=2.0);
+    lat_max=4.5 # just used for visulization rn 2024-04-10 (should be fixed)
+    );
 
 is_x0s_from_file = false;
 is_results_from_file = false;
