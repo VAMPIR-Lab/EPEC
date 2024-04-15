@@ -520,43 +520,44 @@ function solve_seq_adaptive(probs, x0, road; only_want_gnep=false, only_want_sp=
         # !!! Ordering of x_w changes because:
         # 1p: [x1=>1:60 λ1,s1=>61:280, w=>281:348]
         # 2p: [x1,x2=>1:120, λ1,λ2,s1,s2=>121:560 w=>561:568
-        sp_a_init = zeros(probs.sp_a.top_level.n)
+        sp_a_init = zeros(probs.gnep.top_level.n)
         sp_a_init[probs.sp_a.x_inds] = [Xa; Ua]
-        sp_a_init = [sp_a_init; Xb; Ub; x0; ca; cb; ra; rb] # right now parameters are expected to be contiguous
-        #sp_a_init = [sp_a_init; x0]; 
+        sp_a_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+xu_dim*T] = [Xb; Ub]
+        sp_a_init[probs.sp_a.top_level.n+6*T+1:probs.sp_a.top_level.n+6*T+n_param] = [x0; ca; cb; ra; rb] # right now parameters are expected to be contiguous
 
         #@info "(7a) sp_a..."
-        θ_sp_a_success, θ_sp_a = attempt_solve(probs.sp_a, sp_a_init)
+        #@infiltrate
+        sp_a_success, θ_sp_a = attempt_solve(probs.sp_a, sp_a_init)
         #show_me([θ_sp_a[probs.sp_a.x_inds]; θ_sp_a[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+60]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # if it fails:
         #show_me([safehouse.θ_out[probs.sp_a.x_inds]; safehouse.w[1:60]], safehouse.w[61:68]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # swapping b for a:
-        sp_b_init = zeros(probs.sp_a.top_level.n)
+        sp_b_init = zeros(probs.gnep.top_level.n)
         sp_b_init[probs.sp_a.x_inds] = [Xb; Ub]
-        sp_b_init = [sp_b_init; Xa; Ua; x0[5:8]; x0[1:4]; cb; ca; rb; ra]
-        #θ_sp_b = solve(probs.sp_b, sp_b_init) # doesn't work because x_w = [xb xa x0]
+        sp_b_init[probs.sp_a.top_level.n+1:probs.sp_a.top_level.n+6*T] = [Xa; Ua]
+        sp_b_init[probs.sp_a.top_level.n+6*T+1:probs.sp_a.top_level.n+6*T+n_param] = [x0[5:8]; x0[1:4]; cb; ca; rb; ra]
 
         #@info "(7b) sp_b..."
-        θ_sp_b_success, θ_sp_b = attempt_solve(probs.sp_a, sp_b_init)
+        sp_b_success, θ_sp_b = attempt_solve(probs.sp_a, sp_b_init)
         #show_me([θ_sp_b[probs.sp_b.top_level.n+1:probs.sp_b.top_level.n+60]; θ_sp_b[probs.sp_b.x_inds]], x0; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)
         # if it fails:
         #show_me([safehouse.w[1:60]; safehouse.θ_out[probs.sp_b.x_inds]], [safehouse.w[65:68]; safehouse.w[61:64]]; T=probs.params.T, lat_pos_max=probs.params.lat_max + sqrt(probs.params.r) / 2)    
 
         if only_want_sp
-            sp_success = θ_sp_a_success # assume ego is P1
+            sp_success = sp_a_success # assume ego is P1
         else
-            sp_success = θ_sp_a_success && θ_sp_b_success # consider sp success to be bilateral success
+            sp_success = sp_a_success && sp_b_success # consider sp success to be bilateral success
         end
 
         if sp_success
             #@info "sp success 7"
             gnep_like = zeros(probs.gnep.top_level.n)
 
-            if θ_sp_a_success && θ_sp_b_success
+            if sp_a_success && sp_b_success
                 gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; θ_sp_b[probs.sp_a.x_inds]]
-            elseif θ_sp_a_success
+            elseif sp_a_success
                 gnep_like[probs.gnep.x_inds] = [θ_sp_a[probs.sp_a.x_inds]; Xb; Ub]
-            elseif θ_sp_b_success
+            elseif sp_b_success
                 gnep_like[probs.gnep.x_inds] = [Xa; Ua; θ_sp_b[probs.sp_a.x_inds]]
             end
             gnep_like = [gnep_like; x0]
@@ -732,7 +733,6 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             r_P2 = b_res.P1
             r_U2 = b_res.U1
             r = (; P1=r_P1, U1=r_U1, P2=r_P2, U2=r_U2)
-            r
         elseif mode == 5 # P1 NE, P2 Leader
             a_res = solve_seq_adaptive(probs, x0, road; only_want_gnep=true, only_want_sp=false)
             b_res = solve_seq_adaptive(probs, x0_swapped, road; only_want_gnep=false, only_want_sp=false)

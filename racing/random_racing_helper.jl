@@ -1,11 +1,14 @@
-using Random
-using Statistics
-using StatsPlots
+
 #const xdim = 4
 #const udim = 2
 # generate x0s
 function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
     # choose random P1 lateral position inside the lane limits, long pos = 0
+    #c, r = get_road(0; road);
+    # solve quadratic equation to find x intercepts of the road
+    #lax_max = sqrt((r - road_d)^2 - c[2]^2) + c[1]
+    #lax_max = sqrt((r + road_d)^2 - c[2]^2) + c[1]
+    #lat_max = min()
     a_lat_pos0_arr = -lat_max .+ 2 * lat_max .* rand(MersenneTwister(), sample_size) # .5 .* ones(sample_size)
     # fix P1 longitudinal pos at 0
     a_pos0_arr = hcat(a_lat_pos0_arr, zeros(sample_size, 1))
@@ -32,7 +35,6 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
 
     # keep lateral velocity zero
 
-
     a_long_vel_min = b_long_vel_delta_max
     a_vel0_arr  = hcat(zeros(sample_size), a_long_vel_min .+ (a_long_vel_max - a_long_vel_min) .* rand(MersenneTwister(), sample_size))
     #a_vel0_arr = hcat(zeros(sample_size), a_long_vel_max .* rand(MersenneTwister(), sample_size))
@@ -50,7 +52,10 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
         b_vel0_arr[i, 2] = b_long_vel0
     end
 
-    x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
+    #@infiltrate
+    #x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
+    # really simple since lateral vel is zero
+    x0_arr = hcat(a_pos0_arr, a_vel0_arr[:,2], ones(length(a_vel0_arr[:,1])) .* π/2, b_pos0_arr, b_vel0_arr[:,2], ones(length(b_vel0_arr[:,1])) .* π/2)
     #@infiltrate
     x0s = Dict()
 
@@ -288,53 +293,53 @@ function print_mean_min_max(Δcost)
     println("P2 Δcost rel%:  $(mean(Δcost.P2_rel) * 100)  $(std(Δcost.P2_rel)/sqrt(length(Δcost.P2_rel)) * 100)  $(minimum(Δcost.P2_rel) * 100)  $(maximum(Δcost.P2_rel) * 100)")
 end
 
-function plot_running_costs(costs; T=100, is_cumulative=false, sup_title="", alpha=0.2)
-    pa_lane = Plots.plot()
-    pb_lane = Plots.plot()
-    pa_control = Plots.plot()
-    pb_control = Plots.plot()
-    pa_velocity = Plots.plot()
-    pb_velocity = Plots.plot()
-    pa_comp = Plots.plot()
-    pb_comp = Plots.plot()
-    pa_total = Plots.plot()
-    pb_total = Plots.plot()
+#function plot_running_costs(costs; T=100, is_cumulative=false, sup_title="", alpha=0.2)
+#    pa_lane = Plots.plot()
+#    pb_lane = Plots.plot()
+#    pa_control = Plots.plot()
+#    pb_control = Plots.plot()
+#    pa_velocity = Plots.plot()
+#    pb_velocity = Plots.plot()
+#    pa_comp = Plots.plot()
+#    pb_comp = Plots.plot()
+#    pa_total = Plots.plot()
+#    pb_total = Plots.plot()
 
-    for (index, c) in costs
-        idx = 1:min(T, length(c.a.running.lane))
+#    for (index, c) in costs
+#        idx = 1:min(T, length(c.a.running.lane))
 
-        if is_cumulative
-            Plots.plot!(pa_lane, alpha=alpha, cumsum(c.a.running.lane[idx]), title="a lane", label="")
-            Plots.plot!(pb_lane, alpha=alpha, cumsum(c.b.running.lane[idx]), title="b lane", label="")
-            Plots.plot!(pa_control, alpha=alpha, cumsum(c.a.running.control[idx]), title="a control", label="")
-            Plots.plot!(pb_control, alpha=alpha, cumsum(c.b.running.control[idx]), title="b control", label="")
-            Plots.plot!(pa_velocity, alpha=alpha, cumsum(c.a.running.velocity[idx]), title="a velocity", label="")
-            Plots.plot!(pb_velocity, alpha=alpha, cumsum(c.b.running.velocity[idx]), title="b velocity", label="")
-            Plots.plot!(pa_comp, alpha=alpha, cumsum(c.a.running.competitive[idx]), title="a competitive", label="")
-            Plots.plot!(pb_comp, alpha=alpha, cumsum(c.b.running.competitive[idx]), title="b competitive", label="")
-            Plots.plot!(pa_total, alpha=alpha, cumsum(c.a.running.total[idx]), title="a total", label="")
-            Plots.plot!(pb_total, alpha=alpha, cumsum(c.b.running.total[idx]), title="b total", label="")
-        else
-            Plots.plot!(pa_lane, alpha=alpha, c.a.running.lane[idx], title="a lane", label="")
-            Plots.plot!(pb_lane, alpha=alpha, c.b.running.lane[idx], title="b lane", label="")
-            Plots.plot!(pa_control, alpha=alpha, c.a.running.control[idx], title="a control", label="")
-            Plots.plot!(pb_control, alpha=alpha, c.b.running.control[idx], title="b control", label="")
-            Plots.plot!(pa_velocity, alpha=alpha, c.a.running.velocity[idx], title="a velocity", label="")
-            Plots.plot!(pb_velocity, alpha=alpha, c.b.running.velocity[idx], title="b velocity", label="")
-            Plots.plot!(pa_comp, alpha=alpha, mean.(c.a.running.competitive[idx] + c.a.running.velocity[idx]), title="a competitive", label="")
-            Plots.plot!(pb_comp, alpha=alpha, mean.(c.b.running.competitive[idx] + c.b.running.velocity[idx]), title="b competitive", label="")
-            Plots.plot!(pa_total, alpha=alpha, c.a.running.total[idx], title="a total", label="")
-            Plots.plot!(pb_total, alpha=alpha, c.b.running.total[idx], title="b total", label="")
-        end
-    end
+#        if is_cumulative
+#            Plots.plot!(pa_lane, alpha=alpha, cumsum(c.a.running.lane[idx]), title="a lane", label="")
+#            Plots.plot!(pb_lane, alpha=alpha, cumsum(c.b.running.lane[idx]), title="b lane", label="")
+#            Plots.plot!(pa_control, alpha=alpha, cumsum(c.a.running.control[idx]), title="a control", label="")
+#            Plots.plot!(pb_control, alpha=alpha, cumsum(c.b.running.control[idx]), title="b control", label="")
+#            Plots.plot!(pa_velocity, alpha=alpha, cumsum(c.a.running.velocity[idx]), title="a velocity", label="")
+#            Plots.plot!(pb_velocity, alpha=alpha, cumsum(c.b.running.velocity[idx]), title="b velocity", label="")
+#            Plots.plot!(pa_comp, alpha=alpha, cumsum(c.a.running.competitive[idx]), title="a competitive", label="")
+#            Plots.plot!(pb_comp, alpha=alpha, cumsum(c.b.running.competitive[idx]), title="b competitive", label="")
+#            Plots.plot!(pa_total, alpha=alpha, cumsum(c.a.running.total[idx]), title="a total", label="")
+#            Plots.plot!(pb_total, alpha=alpha, cumsum(c.b.running.total[idx]), title="b total", label="")
+#        else
+#            Plots.plot!(pa_lane, alpha=alpha, c.a.running.lane[idx], title="a lane", label="")
+#            Plots.plot!(pb_lane, alpha=alpha, c.b.running.lane[idx], title="b lane", label="")
+#            Plots.plot!(pa_control, alpha=alpha, c.a.running.control[idx], title="a control", label="")
+#            Plots.plot!(pb_control, alpha=alpha, c.b.running.control[idx], title="b control", label="")
+#            Plots.plot!(pa_velocity, alpha=alpha, c.a.running.velocity[idx], title="a velocity", label="")
+#            Plots.plot!(pb_velocity, alpha=alpha, c.b.running.velocity[idx], title="b velocity", label="")
+#            Plots.plot!(pa_comp, alpha=alpha, mean.(c.a.running.competitive[idx] + c.a.running.velocity[idx]), title="a competitive", label="")
+#            Plots.plot!(pb_comp, alpha=alpha, mean.(c.b.running.competitive[idx] + c.b.running.velocity[idx]), title="b competitive", label="")
+#            Plots.plot!(pa_total, alpha=alpha, c.a.running.total[idx], title="a total", label="")
+#            Plots.plot!(pb_total, alpha=alpha, c.b.running.total[idx], title="b total", label="")
+#        end
+#    end
 
-    #Plots.plot(pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=(2, 5))
-    #Plots.plot!(title)
+#    #Plots.plot(pa_lane, pa_control, pa_velocity, pa_terminal, pa_total, pb_lane, pb_control, pb_velocity, pb_terminal, pb_total, layout=(2, 5))
+#    #Plots.plot!(title)
 
-    title = Plots.plot(title="$(sup_title)", grid=false, showaxis=false, bottom_margin=-50Plots.px)
-    #Plots.plot(title, pa_lane, pa_control, pa_velocity, pa_comp, pa_total, pb_lane, pb_control, pb_velocity, pb_comp, pb_total, layout=@layout([A{0.01h}; (2, 5)]))
-    Plots.plot(pa_comp, pb_comp, layout=@layout([(1, 2)]))
-end
+#    title = Plots.plot(title="$(sup_title)", grid=false, showaxis=false, bottom_margin=-50Plots.px)
+#    #Plots.plot(title, pa_lane, pa_control, pa_velocity, pa_comp, pa_total, pb_lane, pb_control, pb_velocity, pb_comp, pb_total, layout=@layout([A{0.01h}; (2, 5)]))
+#    Plots.plot(pa_comp, pb_comp, layout=@layout([(1, 2)]))
+#end
 
 function plot_x0s(data_dict; lat=2.0, ymax=3.0, rad=0.5)
     plots = []
