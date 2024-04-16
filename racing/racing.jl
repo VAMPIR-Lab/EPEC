@@ -654,7 +654,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
     x0b = x0[5:8]
     P1_buffer = repeat(x0', 10, 1)
     P2_buffer = repeat(x0', 10, 1)
-    U2_buffer = repeat([0, 0]', 10, 1)
+    U1_buffer = repeat([0, 0]', 10, 1)
     U2_buffer = repeat([0, 0]', 10, 1)
 
     results = Dict()

@@ -1,9 +1,4 @@
 using EPEC
-#using GLMakie
-#using LinearAlgebra
-#using Plots
-#include("../racing/racing.jl")
-#include("../racing/visualize_racing.jl")
 
 probs = setup(; T=10,
     Δt=0.1,
@@ -36,10 +31,10 @@ x0 = [ -0.9339583266548017
 1.5707963267948966]
 
 #road = Dict(3 => 0, 6 => 0, 9 => -1, 12 => -2.5, 15 => -2.5, 18 => -1, 21 => 0, 24 => .5, 27 => 0);
-road = Dict(0 => 0, 2 => 0, 4=>-.2, 6=>-.4, 8=>-.8, 10=>-1.6, 12=>-2.2, 14=>-2.2, 16=>-1.6, 18=>-.7, 20=>.7, 22=>1.6, 24=>2.2, 26=>2.2, 28=>1.6, 30=>.8,32=>.4,34=>.2,36=>0,38=>0, 40=>-.01);
-mode = 1;
+road = Dict(0 => 0, 2 => 0, 4=>-.2, 6=>-.5, 8=>-.9, 10=>-1.7, 12=>-2.4, 14=>-2.4, 16=>-1.6, 18=>-.7, 20=>.7, 22=>1.6, 24=>2.4, 26=>2.4, 28=>1.6, 30=>.9,32=>.5,34=>.2,36=>0,38=>0, 40=>-.01);
+mode = 3;
 sim_results = solve_simulation(probs, 50; x0, road, mode);
-animate(probs, sim_results; save=false, mode, road);
+EPEC.animate(probs, sim_results; save=false, mode, road);
 
 #(; P1, P2, gd_both, h, U1, U2, lowest_preference, sorted_Z) = solve_seq_adaptive(probs, x0);
 #(f, ax, XA, XB, lat) = visualize(; rad = sqrt(probs.params.r) / 2, lat = probs.params.lat_max + sqrt(probs.params.r) / 2);

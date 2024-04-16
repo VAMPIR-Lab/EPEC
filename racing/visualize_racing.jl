@@ -95,7 +95,6 @@ function visualize(road; T=10, rad=0.5, lat=6.0, d=1.0)
         circ_left = mapreduce(vcat, -π-0.1:1e-2:π) do t
             c[1] + (r + d + rad) * cos(t), c[2] + (r + d + rad) * sin(t)
         end
-
         circ_left
     end
 

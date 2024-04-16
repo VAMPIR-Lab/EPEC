@@ -1,6 +1,7 @@
 using EPEC
 using Dates
 
+include("../racing/random_racing_helper.jl")
 
 probs = setup(; T=10,
     Δt=0.1,
