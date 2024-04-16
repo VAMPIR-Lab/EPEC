@@ -60,12 +60,12 @@ function f_ego_breakdown(T, X, U, X_opp; α1, α2, β)
         @inbounds x = @view(X[xdim*(t-1)+1:xdim*t])
         @inbounds x_opp = @view(X_opp[xdim*(t-1)+1:xdim*t])
         @inbounds u = @view(U[udim*(t-1)+1:udim*t])
-        long_vel_a = x[3] * sin(x[4])
-        long_vel_b = x_opp[3] * sin(x_opp[4])
+        long_vel = x[3] * sin(x[4])
+        long_vel_opp = x_opp[3] * sin(x_opp[4])
 
         lane_cost_arr[t] = α1 * x[1]^2
         control_cost_arr[t] = α2 * u' * u
-        velocity_cost_arr[t] = β * (long_vel_b - long_vel_a)
+        velocity_cost_arr[t] = β * (long_vel_opp - 2 * long_vel)
     end
 
     lane_cost = sum(lane_cost_arr)

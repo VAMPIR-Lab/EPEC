@@ -49,6 +49,9 @@ function process_costs(results, modes_sorted; property=:total)
         b_steps = [res.steps[i] for i in inds]
         a_costs = [getindex(res.costs[i].a.final, property) for i in inds]
         b_costs = [getindex(res.costs[i].b.final, property) for i in inds]
+        if a_steps == 0 || b_steps == 0
+            @infiltrate
+        end
         cost_table_old[mode, "a"] = a_costs ./ a_steps
         cost_table_old[mode, "b"] = b_costs ./ b_steps
     end
