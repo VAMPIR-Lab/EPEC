@@ -654,6 +654,8 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
     x0b = x0[5:8]
     P1_buffer = repeat(x0', 10, 1)
     P2_buffer = repeat(x0', 10, 1)
+    U2_buffer = repeat([0, 0]', 10, 1)
+    U2_buffer = repeat([0, 0]', 10, 1)
 
     results = Dict()
     for t = 1:T
@@ -686,7 +688,7 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
             # currently status isn't saved
             print(status)
             print("\n")
-            results[t] = (; x0, P1=P1_buffer, P2=P2_buffer)
+            results[t] = (; x0, P1=P1_buffer, P2=P2_buffer, U1=U1_buffer, U2=U2_buffer)
             break
         end
 
@@ -827,6 +829,8 @@ function solve_simulation(probs, T; x0=[0, 0, 0, 7, 0.1, -2.21, 0, 7], road=Dict
         results[t] = (; x0, r.P1, r.P2, r.U1, r.U2)
         P1_buffer = vcat(r.P1[3:end, :], r.P1[9:end, :]) # for visualization if x0 is not feasible in the next sim step
         P2_buffer = vcat(r.P2[3:end, :], r.P2[9:end, :])
+        U1_buffer = vcat(r.U1[3:end, :], r.U1[9:end, :]) # for visualization if x0 is not feasible in the next sim step
+        U2_buffer = vcat(r.U2[3:end, :], r.U2[9:end, :])
         x0 = [x0a; x0b]
     end
     results

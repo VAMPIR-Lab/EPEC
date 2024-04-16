@@ -36,7 +36,7 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
     # keep lateral velocity zero
 
     a_long_vel_min = b_long_vel_delta_max
-    a_vel0_arr  = hcat(zeros(sample_size), a_long_vel_min .+ (a_long_vel_max - a_long_vel_min) .* rand(MersenneTwister(), sample_size))
+    a_vel0_arr = hcat(zeros(sample_size), a_long_vel_min .+ (a_long_vel_max - a_long_vel_min) .* rand(MersenneTwister(), sample_size))
     #a_vel0_arr = hcat(zeros(sample_size), a_long_vel_max .* rand(MersenneTwister(), sample_size))
 
     b_vel0_arr = zeros(size(a_vel0_arr))
@@ -55,7 +55,7 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
     #@infiltrate
     #x0_arr = hcat(a_pos0_arr, a_vel0_arr, b_pos0_arr, b_vel0_arr)
     # really simple since lateral vel is zero
-    x0_arr = hcat(a_pos0_arr, a_vel0_arr[:,2], ones(length(a_vel0_arr[:,1])) .* π/2, b_pos0_arr, b_vel0_arr[:,2], ones(length(b_vel0_arr[:,1])) .* π/2)
+    x0_arr = hcat(a_pos0_arr, a_vel0_arr[:, 2], ones(length(a_vel0_arr[:, 1])) .* π / 2, b_pos0_arr, b_vel0_arr[:, 2], ones(length(b_vel0_arr[:, 1])) .* π / 2)
     #@infiltrate
     x0s = Dict()
 
@@ -66,72 +66,80 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
 end
 
 # detailed cost
-function f1_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds Xa = @view(Z[1:4*T])
-    @inbounds Ua = @view(Z[4*T+1:6*T])
-    @inbounds Xb = @view(Z[6*T+1:10*T])
-    @inbounds Ub = @view(Z[10*T+1:12*T])
+function view_z(z)
+    n_param = 14
+    xdim = 4
+    udim = 2
+    T = Int((length(z) - n_param) / (2 * (xdim + udim))) # 2 real players, 4 players total
+    indices = Dict()
+    idx = 0
+    for (len, name) in zip([xdim * T, udim * T, xdim * T, udim * T, xdim, xdim, 2, 2, 1, 1], ["Xa", "Ua", "Xb", "Ub", "x0a", "x0b", "ca", "cb", "ra", "rb"])
+        indices[name] = (idx+1):(idx+len)
+        idx += len
+    end
+    @inbounds Xa = @view(z[indices["Xa"]])
+    @inbounds Ua = @view(z[indices["Ua"]])
+    @inbounds Xb = @view(z[indices["Xb"]])
+    @inbounds Ub = @view(z[indices["Ub"]])
+    @inbounds x0a = @view(z[indices["x0a"]])
+    @inbounds x0b = @view(z[indices["x0b"]])
+    @inbounds ca = @view(z[indices["ca"]])
+    @inbounds cb = @view(z[indices["cb"]])
+    @inbounds ra = @view(z[indices["ra"]])
+    @inbounds rb = @view(z[indices["rb"]])
+    (T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb, indices)
+end
+
+# each player wants to make forward progress and stay in center of lane
+# e = ego
+# o = opponent
+function f_ego_breakdown(T, X, U, X_opp; α1, α2, β)
+    xdim = 4
+    udim = 2
+    cost = 0.0
 
     lane_cost_arr = zeros(T)
     control_cost_arr = zeros(T)
     velocity_cost_arr = zeros(T)
-    comp_cost_arr = zeros(T)
 
     for t in 1:T
-        @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
-        @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
-        @inbounds ua = @view(Ua[udim*(t-1)+1:udim*t])
-        lane_cost_arr[t] = α1 * xa[1]^2
-        control_cost_arr[t] = α2 * ua' * ua
-        velocity_cost_arr[t] = -α3 * xa[4]
-        comp_cost_arr[t] = β * xb[4]
+        @inbounds x = @view(X[xdim*(t-1)+1:xdim*t])
+        @inbounds x_opp = @view(X_opp[xdim*(t-1)+1:xdim*t])
+        @inbounds u = @view(U[udim*(t-1)+1:udim*t])
+        long_vel_a = x[3] * sin(x[4])
+        long_vel_b = x_opp[3] * sin(x_opp[4])
+
+        lane_cost_arr[t] = α1 * x[1]^2
+        control_cost_arr[t] = α2 * u' * u
+        velocity_cost_arr[t] = β * (long_vel_b - long_vel_a)
     end
 
     lane_cost = sum(lane_cost_arr)
     control_cost = sum(control_cost_arr)
     velocity_cost = sum(velocity_cost_arr)
-    comp_cost = sum(comp_cost_arr)
-    total_cost = lane_cost + control_cost + velocity_cost + comp_cost
-    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ comp_cost_arr
-    final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost, competitive=comp_cost)
-    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, competitive=comp_cost_arr)
+    total_cost = lane_cost + control_cost + velocity_cost
+    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr
+    final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost)
+    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr)
     (; final, running)
 end
 
-function f2_breakdown(Z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T = Int((length(Z) - 8) / 12) # 2*(state_dim + control_dim) = 12
-    @inbounds Xa = @view(Z[1:4*T])
-    @inbounds Ua = @view(Z[4*T+1:6*T])
-    @inbounds Xb = @view(Z[6*T+1:10*T])
-    @inbounds Ub = @view(Z[10*T+1:12*T])
+function f1_breakdown(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
 
-    lane_cost_arr = zeros(T)
-    control_cost_arr = zeros(T)
-    velocity_cost_arr = zeros(T)
-    comp_cost_arr = zeros(T)
+    f_ego_breakdown(T, Xa, Ua, Xb; α1, α2, β)
+end
 
-    for t in 1:T
-        @inbounds xa = @view(Xa[xdim*(t-1)+1:xdim*t])
-        @inbounds xb = @view(Xb[xdim*(t-1)+1:xdim*t])
-        @inbounds ub = @view(Ub[udim*(t-1)+1:udim*t])
-        lane_cost_arr[t] = α1 * xb[1]^2
-        control_cost_arr[t] = α2 * ub' * ub
-        velocity_cost_arr[t] = -α3 * xb[4]
-        comp_cost_arr[t] = β * xa[4]
-    end
-    lane_cost = sum(lane_cost_arr)
-    control_cost = sum(control_cost_arr)
-    velocity_cost = sum(velocity_cost_arr)
-    comp_cost = sum(comp_cost_arr)
-    total_cost = lane_cost + control_cost + velocity_cost + comp_cost
-    total_cost_arr = lane_cost_arr .+ control_cost_arr .+ velocity_cost_arr .+ comp_cost_arr
-    final = (; total=total_cost, lane=lane_cost, control=control_cost, velocity=velocity_cost, competitive=comp_cost)
-    running = (; total=total_cost_arr, lane=lane_cost_arr, control=control_cost_arr, velocity=velocity_cost_arr, competitive=comp_cost_arr)
-    (; final, running)
+function f2_breakdown(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
+    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
+
+    f_ego_breakdown(T, Xb, Ub, Xa; α1, α2, β)
 end
 
 function compute_realized_cost(res)
+    xdim = 4
+    udim = 2
+    pdim = 14
     T = length(res)
     Xa = zeros(xdim * T)
     Ua = zeros(udim * T)
@@ -140,21 +148,24 @@ function compute_realized_cost(res)
 
     for t in eachindex(res)
         Xa[xdim*(t-1)+1:xdim*t] = res[t].x0[1:4]
-        Ua[udim*(t-1)+1:udim*t] = res[t].U1[1, :]
         Xb[xdim*(t-1)+1:xdim*t] = res[t].x0[5:8]
-        Ub[udim*(t-1)+1:udim*t] = res[t].U2[1, :]
-    end
-    Z = [Xa; Ua; Xb; Ub; zeros(8)] # making it work with f1(Z) and f2(Z)
 
-    a_cost = probs.OP1.f(Z)
-    b_cost = probs.OP2.f(Z)
-    a_breakdown = f1_breakdown(Z; probs.params.α1, probs.params.α2, probs.params.α3, probs.params.β)
-    b_breakdown = f2_breakdown(Z; probs.params.α1, probs.params.α2, probs.params.α3, probs.params.β)
-    #a_breakdown = f1_breakdown(Z; α1=1., α2=1., α3=1., β=1.)
-    #b_breakdown = f2_breakdown(Z; α1=1., α2=1., α3=1., β=1.)
+        #fieldnames(typeof(res))
+        if hasproperty(res, :U1) # forgot to add 
+            Ua[udim*(t-1)+1:udim*t] = res[t].U1[1, :]
+            Ub[udim*(t-1)+1:udim*t] = res[t].U2[1, :]
+        end
+    end
+    z = [Xa; Ua; Xb; Ub; zeros(pdim)] # making it work with f1(Z) and f2(Z)
+
+    a_cost = probs.OP1.f(z)
+    b_cost = probs.OP2.f(z)
+    a_breakdown = f1_breakdown(z; probs.params.α1, probs.params.α2, probs.params.α3, probs.params.β)
+    b_breakdown = f2_breakdown(z; probs.params.α1, probs.params.α2, probs.params.α3, probs.params.β)
+
     # breakdowns were copy pasted so
-    #@assert(isapprox(a_cost, a_breakdown.final.total))
-    #@assert(isapprox(b_cost, b_breakdown.final.total))
+    @assert(isapprox(a_cost, a_breakdown.final.total))
+    @assert(isapprox(b_cost, b_breakdown.final.total))
     (; a=a_breakdown, b=b_breakdown)
 end
 
@@ -176,17 +187,14 @@ function extract_intersected_costs(sp_costs, gnep_costs, bilevel_costs)
     sp_lane_cost_arr = []
     sp_control_cost_arr = []
     sp_velocity_cost_arr = []
-    sp_comp_cost_arr = []
     gnep_cost_arr = []
     gnep_lane_cost_arr = []
     gnep_control_cost_arr = []
     gnep_velocity_cost_arr = []
-    gnep_comp_cost_arr = []
     bilevel_cost_arr = []
     bilevel_lane_cost_arr = []
     bilevel_control_cost_arr = []
     bilevel_velocity_cost_arr = []
-    bilevel_comp_cost_arr = []
 
     for (index, sp_cost) in sp_costs
         if haskey(gnep_costs, index) && haskey(bilevel_costs, index)
@@ -196,23 +204,20 @@ function extract_intersected_costs(sp_costs, gnep_costs, bilevel_costs)
                 push!(sp_lane_cost_arr, [sp_cost.a.final.lane, sp_cost.b.final.lane])
                 push!(sp_control_cost_arr, [sp_cost.a.final.control, sp_cost.b.final.control])
                 push!(sp_velocity_cost_arr, [sp_cost.a.final.velocity, sp_cost.b.final.velocity])
-                push!(sp_comp_cost_arr, [sp_cost.a.final.competitive, sp_cost.b.final.competitive])
                 push!(gnep_cost_arr, [gnep_costs[index].a.final.total, gnep_costs[index].b.final.total])
                 push!(gnep_lane_cost_arr, [gnep_costs[index].a.final.lane, gnep_costs[index].b.final.lane])
                 push!(gnep_control_cost_arr, [gnep_costs[index].a.final.control, gnep_costs[index].b.final.control])
                 push!(gnep_velocity_cost_arr, [gnep_costs[index].a.final.velocity, gnep_costs[index].b.final.velocity])
-                push!(gnep_comp_cost_arr, [gnep_costs[index].a.final.competitive, gnep_costs[index].b.final.competitive])
                 push!(bilevel_cost_arr, [bilevel_costs[index].a.final.total, bilevel_costs[index].b.final.total])
                 push!(bilevel_lane_cost_arr, [bilevel_costs[index].a.final.lane, bilevel_costs[index].b.final.lane])
                 push!(bilevel_control_cost_arr, [bilevel_costs[index].a.final.control, bilevel_costs[index].b.final.control])
                 push!(bilevel_velocity_cost_arr, [bilevel_costs[index].a.final.velocity, bilevel_costs[index].b.final.velocity])
-                push!(bilevel_comp_cost_arr, [bilevel_costs[index].a.final.competitive, bilevel_costs[index].b.final.competitive])
             end
         end
     end
-    sp_extracted = (total=sp_cost_arr, lane=sp_lane_cost_arr, control=sp_control_cost_arr, velocity=sp_velocity_cost_arr, comp=spcomp_cost_arr)
-    gnep_extracted = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, velocity=gnep_velocity_cost_arr, comp=gnep_comp_cost_arr)
-    bilevel_extracted = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, velocity=bilevel_velocity_cost_arr, comp=bilevel_comp_cost_arr)
+    sp_extracted = (total=sp_cost_arr, lane=sp_lane_cost_arr, control=sp_control_cost_arr, velocity=sp_velocity_cost_arr)
+    gnep_extracted = (total=gnep_cost_arr, lane=gnep_lane_cost_arr, control=gnep_control_cost_arr, velocity=gnep_velocity_cost_arr)
+    bilevel_extracted = (total=bilevel_cost_arr, lane=bilevel_lane_cost_arr, control=bilevel_control_cost_arr, velocity=bilevel_velocity_cost_arr)
     cost = (ind=index_arr, sp=sp_extracted, gnep=gnep_extracted, bilevel=bilevel_extracted)
     cost
 end
@@ -239,10 +244,10 @@ function process_costs(results, modes_sorted; property=:total)
     for mode in modes_sorted
         res = results[mode]
         inds = res.costs |> keys |> collect |> sort
-		a_steps = [res.steps[i] for i in inds]
-		b_steps = [res.steps[i] for i in inds]
+        a_steps = [res.steps[i] for i in inds]
+        b_steps = [res.steps[i] for i in inds]
         a_costs = [getindex(res.costs[i].a.final, property) for i in inds]
-        b_costs = [getindex(res.costs[i].b.final, property)  for i in inds]
+        b_costs = [getindex(res.costs[i].b.final, property) for i in inds]
         cost_table_old[mode, "a"] = a_costs ./ a_steps
         cost_table_old[mode, "b"] = b_costs ./ b_steps
     end
@@ -268,21 +273,21 @@ function process_costs(results, modes_sorted; property=:total)
 
     compressed_table = Dict()
     for strat in ["S", "N", "L", "F"]
-        compressed_table[strat] = (full_table[strat, "S"] + full_table[strat, "N"] + full_table[strat, "F"] + full_table[strat, "L"])/4
+        compressed_table[strat] = (full_table[strat, "S"] + full_table[strat, "N"] + full_table[strat, "F"] + full_table[strat, "L"]) / 4
     end
-	(;full=full_table, compressed=compressed_table)
+    (; full=full_table, compressed=compressed_table)
 end
 
 
-function print_mean_etc(vals; title="", scale=1.0, sigdigits = 3)
-    vals = vals.*scale
-	CI = 1.96*std(vals)/sqrt(length(vals));
-	m = mean(vals);
-	m95l = m - CI;
-	m95u = m + CI; 
-	s = std(vals)
+function print_mean_etc(vals; title="", scale=1.0, sigdigits=3)
+    vals = vals .* scale
+    CI = 1.96 * std(vals) / sqrt(length(vals))
+    m = mean(vals)
+    m95l = m - CI
+    m95u = m + CI
+    s = std(vals)
 
-	println("$(title)	$(round(m; sigdigits)) (±$(round(CI; sigdigits))) [$(round(m95l; sigdigits)), $(round(m95u; sigdigits))]	$(round(s; sigdigits))	$(round(minimum(vals); sigdigits))	$(round(maximum(vals); sigdigits))")
+    println("$(title)	$(round(m; sigdigits)) (±$(round(CI; sigdigits))) [$(round(m95l; sigdigits)), $(round(m95u; sigdigits))]	$(round(s; sigdigits))	$(round(minimum(vals); sigdigits))	$(round(maximum(vals); sigdigits))")
 end
 
 function print_mean_min_max(Δcost)
@@ -352,16 +357,16 @@ function plot_x0s(data_dict; lat=2.0, ymax=3.0, rad=0.5)
         circ_x_shifted_A = circ_x .+ x
         circ_y_shifted_A = circ_y .+ y
         Plots.plot!(circ_x_shifted_A, circ_y_shifted_A, line=:path, color=:blue, label="")
-        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:blue, label="", linewidth=.1)
+        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:blue, label="", linewidth=0.1)
 
         x, y, u, v = values[5:8]
         circ_x_shifted_B = circ_x .+ x
         circ_y_shifted_B = circ_y .+ y
         Plots.plot!(circ_x_shifted_B, circ_y_shifted_B, line=:path, color=:red, label="")
-        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:red, label="", linewidth=.1)
+        Plots.quiver!([x], [y], quiver=([u], [v]), aspect_ratio=:equal, axis=([], false), color=:red, label="", linewidth=0.1)
         Plots.plot!([-lat, -lat], [-ymax, ymax], color=:black, label="")
         Plots.plot!([+lat, +lat], [-ymax, ymax], color=:black, label="")
         push!(plots, p)
     end
-    Plots.plot(plots..., margin=1e-3*Plots.mm)
+    Plots.plot(plots..., margin=1e-3 * Plots.mm)
 end
