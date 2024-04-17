@@ -1,7 +1,8 @@
-
+include("road.jl")
 #const xdim = 4
 #const udim = 2
 # generate x0s
+# also generates roads
 function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_vel_max, b_long_vel_delta_max)
     # choose random P1 lateral position inside the lane limits, long pos = 0
     #c, r = get_road(0; road);
@@ -9,12 +10,21 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
     #lax_max = sqrt((r - road_d)^2 - c[2]^2) + c[1]
     #lax_max = sqrt((r + road_d)^2 - c[2]^2) + c[1]
     #lat_max = min()
-    a_lat_pos0_arr = -lat_max .+ 2 * lat_max .* rand(MersenneTwister(), sample_size) # .5 .* ones(sample_size)
+    roads = Vector{Dict{Float64, Float64}}(undef, sample_size)
+
+    a_lat_pos0_arr = -lat_max .+ 2 * lat_max .* rand(MersenneTwister(), sample_size)  # .5 .* ones(sample_size)
     # fix P1 longitudinal pos at 0
     a_pos0_arr = hcat(a_lat_pos0_arr, zeros(sample_size, 1))
     b_pos0_arr = zeros(size(a_pos0_arr))
     # choose random radial offset for P2
     for i in 1:sample_size
+        roads[i] = gen_road()
+
+        # shift initial position wrt to road
+        road_ys = roads[i] |> keys |> collect
+        sortedkeys = sortperm((road_ys .- 0) .^ 2)
+        a_pos0_arr[i, 1] += roads[i][road_ys[sortedkeys[1]]] 
+
         r_offset = r_offset_min .+ (r_offset_max - r_offset_min) .* sqrt.(rand(MersenneTwister()))
         ϕ_offset = rand(MersenneTwister()) * 2 * π
         b_lat_pos0 = a_pos0_arr[i, 1] + r_offset * cos(ϕ_offset)
@@ -25,11 +35,15 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
             b_lat_pos0 = a_pos0_arr[i, 1] + r_offset * cos(ϕ_offset)
         end
         b_long_pos0 = a_pos0_arr[i, 2] + r_offset * sin(ϕ_offset)
+        # offset by road
+        sortedkeys = sortperm((road_ys .- b_long_pos0) .^ 2) 
+        b_lat_pos0 += roads[i][road_ys[sortedkeys[1]]]
         b_pos0_arr[i, :] = [b_lat_pos0, b_long_pos0]
     end
 
     @assert minimum(sqrt.(sum((a_pos0_arr .- b_pos0_arr) .^ 2, dims=2))) >= 1.0 # probs.params.r
-    @assert all(-lat_max .< b_pos0_arr[:, 1] .< lat_max)
+    #@assert all(-lat_max .< b_pos0_arr[:, 1] .< lat_max)
+    
     #Plots.scatter(a_pos0_arr[:, 1], a_pos0_arr[:, 2], aspect_ratio=:equal, legend=false)
     #Plots.scatter!(b_pos0_arr[:, 1], b_pos0_arr[:, 2], aspect_ratio=:equal, legend=false)
 
@@ -62,5 +76,5 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
     for (index, row) in enumerate(eachrow(x0_arr))
         x0s[index] = row
     end
-    x0s
+    (x0s, roads)
 end

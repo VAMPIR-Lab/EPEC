@@ -145,20 +145,21 @@ function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_w
         [x[1] - x_opp[1] x[2] - x_opp[2]]
     end
 
-    Δθ = mapreduce(vcat, 1:T) do t
-        @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
-        @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
-        x[4] - x_opp[4]
-    end
+    #Δθ = mapreduce(vcat, 1:T) do t
+    #    @inbounds x = @view(X[(t-1)*xdim+1:t*xdim])
+    #    @inbounds x_opp = @view(X_opp[(t-1)*xdim+1:t*xdim])
+    #    x[4] - x_opp[4]
+    #end
 
     @assert size(d) == (T, 2)
     du = u_max_drafting - u_max_nominal
     # objective: if ego is in opponent's drafting box set u_max to u_max_drafting, otherwise set to u_max_nominal
     # bonus objective: du = 0 if the players move in perpendicular directions
-    u_max_1 = du * sigmoid.(d[:, 2] .+ box_length, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
-    u_max_2 = du * sigmoid.(-d[:, 2], 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
-    u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
-    u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2, 10.0, 0) .* cos.(Δθ) .+ u_max_nominal
+
+    u_max_1 = du * sigmoid.(d[:, 2] .+ box_length, 10.0, 0) .+ u_max_nominal
+    u_max_2 = du * sigmoid.(-d[:, 2], 10.0, 0) .+ u_max_nominal
+    u_max_3 = du * sigmoid.(d[:, 1] .- box_width / 2 .* (d[:, 2] ./ box_length), 10.0, 0) .+ u_max_nominal
+    u_max_4 = du * sigmoid.(-d[:, 1] .- box_width / 2 .* (d[:, 2] ./ box_length), 10.0, 0) .+ u_max_nominal
     (u_max_1, u_max_2, u_max_3, u_max_4)
 end
 
