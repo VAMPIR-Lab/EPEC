@@ -64,7 +64,7 @@ function f_ego_breakdown(T, X, U, X_opp, c, r; α1, α2, β)
         long_vel_opp = x_opp[3] * sin(x_opp[4])
         p = x[1:2]
 
-        lane_cost_arr[t] = α1 * ((p - c)' * (p - c) - r[1]^2)^2
+        lane_cost_arr[t] = α1^2 * ((p - c)' * (p - c) - r[1]^2)^2
         control_cost_arr[t] = α2 * u' * u
         velocity_cost_arr[t] = β * (long_vel_opp - 2 * long_vel)
     end

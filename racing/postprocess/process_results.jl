@@ -1,6 +1,6 @@
 using EPEC
 using JLD2
-using Infiltrator 
+using Infiltrator
 include("postprocess_helpers.jl")
 
 probs = setup(; T=10,
@@ -19,10 +19,11 @@ probs = setup(; T=10,
 );
 
 data_dir = "data"
-x0s_filename = "x0s_2samples_2024-04-17_1222"
-results_suffix = "_(x0s_2samples_2024-04-17_1222)_2024-04-17_1222_25steps";
+x0s_filename = "x0s_50samples_2024-04-17_1312"
+results_suffix = "_(x0s_50samples_2024-04-17_1312)_2024-04-17_1312_25steps";
 init_file = jldopen("$(data_dir)/$(x0s_filename).jld2", "r")
 x0s = init_file["x0s"];
+roads = init_file["roads"];
 
 modes = 1:10
 results = Dict()
@@ -37,8 +38,9 @@ include("plot_boxplot.jl")
 include("plot_running_cost.jl")
 
 # visualize
-x0 = x0s[1];
-road = roads[1];
+experiment = 2;
+x0 = x0s[experiment];
+road = roads[experiment];
 
 mode = 9;
 sim_results = solve_simulation(probs, 25; x0, road, mode);

@@ -10,5 +10,5 @@ p = Plots.boxplot(["Nash competition, N-N" "Bilevel competition, L-F "], [
     #total_cost_table.full["L", "L"]]
     , legend=false, outliers=false)
 annotate!([(0.2, 9e-2, Plots.text(L"\times10^{-3}", 12, :black, :center))])
-Plots.plot!(p, size=(500, 400), xlabel="Competition type", ylabel="Mean running cost per time step", yaxis=(formatter = y -> round(y * 1e3; sigdigits=4)))
+Plots.plot!(p, size=(500, 400), xlabel="Competition type", ylabel="Mean running cost per time step", yaxis=(formatter = y -> round(y * 10.0; sigdigits=4)))
 savefig("./figures/boxplot_running_cost.pdf")
