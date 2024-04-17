@@ -25,7 +25,7 @@ init_file = jldopen("$(data_dir)/$(x0s_filename).jld2", "r")
 x0s = init_file["x0s"];
 roads = init_file["roads"];
 
-modes = 1:9
+modes = 1:10
 results = Dict()
 
 for i in modes
