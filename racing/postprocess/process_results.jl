@@ -8,7 +8,7 @@ probs = setup(; T=10,
     r=1.0,
     α1=1e-3,
     α2=1e-4,
-    β=1e-1, #.5, # sensitive to high values
+    β=.5, #.5, # sensitive to high values
     cd=0.1, #0.25,
     d=2.0, # actual road width (±)
     u_max_nominal=1.0,
