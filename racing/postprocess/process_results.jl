@@ -3,20 +3,20 @@ using JLD2
 using Infiltrator
 include("postprocess_helpers.jl")
 
-#probs = setup(; T=10,
-#    Δt=0.1,
-#    r=1.0,
-#    α1=1e-3,
-#    α2=1e-4,
-#    β=.5, #.5, # sensitive to high values
-#    cd=0.1, #0.25,
-#    d=2.0, # actual road width (±)
-#    u_max_nominal=1.0,
-#    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
-#    box_length=5.0,
-#    box_width=5.0,
-#    lat_max=4.5 # just used for visulization rn 2024-04-10 (should be fixed)
-#);
+probs = setup(; T=10,
+    Δt=0.1,
+    r=1.0,
+    α1=1e-3,
+    α2=1e-4,
+    β=1e-1, # .1, # sensitive to high values
+    cd=0.1, # .1,
+    d=2.0, # actual road width (±)
+    u_max_nominal=1.0,
+    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
+    box_length=5.0,
+    box_width=5.0,
+    lat_max=4.5 # just used for visulization rn 2024-04-10 (should be fixed)
+);
 
 data_dir = "data"
 x0s_filename = "x0s_10samples_2024-04-17_1611"
