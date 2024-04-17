@@ -1,4 +1,6 @@
 include("road.jl")
+using Random
+using GLMakie
 #const xdim = 4
 #const udim = 2
 # generate x0s
@@ -18,34 +20,30 @@ function generate_x0s(sample_size, lat_max, r_offset_min, r_offset_max, a_long_v
     b_pos0_arr = zeros(size(a_pos0_arr))
     # choose random radial offset for P2
     for i in 1:sample_size
-        roads[i] = gen_road()
-
         # shift initial position wrt to road
+        roads[i] = gen_road()
         road_ys = roads[i] |> keys |> collect
         sortedkeys = sortperm((road_ys .- 0) .^ 2)
-        a_pos0_arr[i, 1] += roads[i][road_ys[sortedkeys[1]]] 
+        road_offset = roads[i][road_ys[sortedkeys[1]]];
+    
+        a_pos0_arr[i, 1] += road_offset
 
         r_offset = r_offset_min .+ (r_offset_max - r_offset_min) .* sqrt.(rand(MersenneTwister()))
         ϕ_offset = rand(MersenneTwister()) * 2 * π
         b_lat_pos0 = a_pos0_arr[i, 1] + r_offset * cos(ϕ_offset)
         # reroll until we b lat pos is inside the lane limits
-        while b_lat_pos0 > lat_max || b_lat_pos0 < -lat_max
+        while b_lat_pos0 > lat_max + road_offset || b_lat_pos0 < -lat_max +road_offset
             r_offset = r_offset_min .+ (r_offset_max - r_offset_min) .* sqrt.(rand(MersenneTwister()))
             ϕ_offset = rand(MersenneTwister()) * 2 * π
             b_lat_pos0 = a_pos0_arr[i, 1] + r_offset * cos(ϕ_offset)
         end
         b_long_pos0 = a_pos0_arr[i, 2] + r_offset * sin(ϕ_offset)
-        # offset by road
-        sortedkeys = sortperm((road_ys .- b_long_pos0) .^ 2) 
-        b_lat_pos0 += roads[i][road_ys[sortedkeys[1]]]
         b_pos0_arr[i, :] = [b_lat_pos0, b_long_pos0]
     end
 
     @assert minimum(sqrt.(sum((a_pos0_arr .- b_pos0_arr) .^ 2, dims=2))) >= 1.0 # probs.params.r
     #@assert all(-lat_max .< b_pos0_arr[:, 1] .< lat_max)
-    
-    #Plots.scatter(a_pos0_arr[:, 1], a_pos0_arr[:, 2], aspect_ratio=:equal, legend=false)
-    #Plots.scatter!(b_pos0_arr[:, 1], b_pos0_arr[:, 2], aspect_ratio=:equal, legend=false)
+
 
     # keep lateral velocity zero
 

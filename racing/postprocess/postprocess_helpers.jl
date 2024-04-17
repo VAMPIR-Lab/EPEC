@@ -47,7 +47,7 @@ end
 # each player wants to make forward progress and stay in center of lane
 # e = ego
 # o = opponent
-function f_ego_breakdown(T, X, U, X_opp; α1, α2, β)
+function f_ego_breakdown(T, X, U, X_opp, c, r; α1, α2, β)
     xdim = 4
     udim = 2
     cost = 0.0
@@ -62,8 +62,9 @@ function f_ego_breakdown(T, X, U, X_opp; α1, α2, β)
         @inbounds u = @view(U[udim*(t-1)+1:udim*t])
         long_vel = x[3] * sin(x[4])
         long_vel_opp = x_opp[3] * sin(x_opp[4])
+        p = x[1:2]
 
-        lane_cost_arr[t] = α1 * x[1]^2
+        lane_cost_arr[t] = α1 * ((p - c)' * (p - c) - r[1]^2)^2
         control_cost_arr[t] = α2 * u' * u
         velocity_cost_arr[t] = β * (long_vel_opp - 2 * long_vel)
     end
@@ -79,15 +80,16 @@ function f_ego_breakdown(T, X, U, X_opp; α1, α2, β)
 end
 
 function f1_breakdown(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    f_ego_breakdown(T, Xa, Ua, Xb; α1, α2, β)
+
+    f_ego_breakdown(T, Xa, Ua, Xb, ca, ra; α1, α2, β)
 end
 
 function f2_breakdown(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    f_ego_breakdown(T, Xb, Ub, Xa; α1, α2, β)
+    f_ego_breakdown(T, Xb, Ub, Xa, cb, rb; α1, α2, β)
 end
 
 function compute_realized_cost(res)

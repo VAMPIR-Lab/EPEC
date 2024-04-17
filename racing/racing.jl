@@ -31,7 +31,7 @@ end
 # each player wants to make forward progress and stay in center of lane
 # e = ego
 # o = opponent
-function f_ego(T, X, U, X_opp; α1, α2, α3, β)
+function f_ego(T, X, U, X_opp, c, r; α1, α2, α3, β)
     xdim = 4
     udim = 2
     cost = 0.0
@@ -42,23 +42,27 @@ function f_ego(T, X, U, X_opp; α1, α2, α3, β)
         @inbounds u = @view(U[udim*(t-1)+1:udim*t])
         long_vel = x[3] * sin(x[4])
         long_vel_opp = x_opp[3] * sin(x_opp[4])
-        cost += α1 * x[1]^2 + α2 * u' * u + β * (long_vel_opp - 2 * long_vel)
+        p = x[1:2]
+        #cost += α1 * x[1]^2 + α2 * u' * u + β * (long_vel_opp - 2 * long_vel)
+        #road_center = (p - c) ./ ((p - c)' * (p - c)) * r[1]
+        #cost += α1 * (p[1] - road_center[1])^2 + α2 * u' * u + β * (long_vel_opp - 2 * long_vel)
+        cost += α1 * ((p - c)' * (p - c) - r[1]^2)^2 + α2 * u' * u + β * (long_vel_opp - 2 * long_vel)
     end
     cost
 end
 
 # P1 wants to make forward progress and stay in center of lane.
 function f1(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    f_ego(T, Xa, Ua, Xb; α1, α2, α3, β)
+    f_ego(T, Xa, Ua, Xb, ca, ra; α1, α2, α3, β)
 end
 
 # P2 wants to make forward progress and stay in center of lane.
 function f2(z; α1=1.0, α2=0.0, α3=0.0, β=1.0)
-    T, Xa, Ua, Xb, Ub, x0a, x0b = view_z(z)
+    T, Xa, Ua, Xb, Ub, x0a, x0b, ca, cb, ra, rb = view_z(z)
 
-    f_ego(T, Xb, Ub, Xa; α1, α2, α3, β)
+    f_ego(T, Xb, Ub, Xa, cb, rb; α1, α2, α3, β)
 end
 
 function pointmass(x, u, Δt, cd)

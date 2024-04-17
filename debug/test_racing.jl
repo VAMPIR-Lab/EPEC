@@ -1,7 +1,8 @@
 using EPEC
 using Infiltrator
 using Random
-#include("../racing/road.jl")
+include("../racing/road.jl")
+
 probs = setup(; T=10,
     Δt=0.1,
     r=1.0,
@@ -11,25 +12,22 @@ probs = setup(; T=10,
     cd=0.1, #0.25,
     d=2.0, # actual road width (±)
     u_max_nominal=1.0,
-    u_max_drafting=5.0, #2.5, # sensitive to high difference over nominal 
+    u_max_drafting=2.5, #2.5, # sensitive to high difference over nominal 
     box_length=5.0,
     box_width=5.0,
     lat_max=4.5 # just used for visulization rn 2024-04-10 (should be fixed)
 );
 
-#x0 = [0, 2, 1, π / 2, -0.5, 0, 1, π / 2]
+x0 = [0, 2, 1, π / 2, -0.5, 0, 2, π / 2]
 
-#road = gen_road();
-## shift initial position wrt to road
-#road_ys = road |> keys |> collect
-#sortedkeys = sortperm((road_ys .- x0[2]) .^ 2)
-#x0[1] = x0[1] + road[road_ys[sortedkeys[1]]]
-#sortedkeys = sortperm((road_ys .- x0[6]) .^ 2)
-#x0[5] = x0[5] + road[road_ys[sortedkeys[1]]]
+road = gen_road();
+# shift initial position wrt to road
+road_ys = road |> keys |> collect
+sortedkeys = sortperm((road_ys .- x0[2]) .^ 2)
+x0[1] = x0[1] + road[road_ys[sortedkeys[1]]]
+sortedkeys = sortperm((road_ys .- x0[6]) .^ 2)
+x0[5] = x0[5] + road[road_ys[sortedkeys[1]]]
 
-x0 = x0s[1];
-road = roads[1];
-
-mode = 3;
+mode = 9;
 sim_results = solve_simulation(probs, 25; x0, road, mode);
 EPEC.animate(probs, sim_results; save=false, mode, road);

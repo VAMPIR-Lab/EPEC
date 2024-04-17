@@ -3,6 +3,7 @@ using JLD2
 using Infiltrator 
 using Dates
 
+
 include("../racing/random_racing_helper.jl")
 
 probs = setup(; T=10,
@@ -14,7 +15,7 @@ probs = setup(; T=10,
     cd=0.1, #0.25,
     d=2.0, # actual road width (±)
     u_max_nominal=1.0,
-    u_max_drafting=5.0,
+    u_max_drafting=2.5,
     box_length=5.0,
     box_width=5.0,
     lat_max=4.5 # just used for visulization rn 2024-04-10 (should be fixed)
@@ -24,15 +25,13 @@ is_x0s_from_file = false;
 is_results_from_file = false;
 data_dir = "data"
 init_filename = "x0s_500samples_2024-01-31_1723";
-sample_size = 100;
+sample_size = 50;
 time_steps = 25;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a
 b_long_vel_delta_max = 1.5 # maximum longitudunal delta velocity for a
 lat_max = probs.params.d - probs.params.col_buffer; # might be better to make smaller
 r_offset_min = probs.params.r + probs.params.col_buffer;
-#road = Dict(0 => 0, 2 => 0, 4=>-.2, 6=>-.4, 8=>-.8, 10=>-1.6, 12=>-2.2, 14=>-2.2, 16=>-1.6, 18=>-.7, 20=>.7, 22=>1.6, 24=>2.2, 26=>2.2, 28=>1.6, 30=>.8,32=>.4,34=>.2,36=>0,38=>0, 40=>-.01);
-
 date_now = Dates.format(now(), "YYYY-mm-dd_HHMM");
 
 if (is_x0s_from_file)

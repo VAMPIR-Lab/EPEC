@@ -110,7 +110,7 @@ end
 
 println("Total:")
 for (k, v) in total_cost_table.compressed
-    print_mean_etc(v; title=k, scale=1000)
+    print_mean_etc(v; title=k, scale=10)
 end
 
 #println("Lane:")
@@ -135,22 +135,22 @@ end
 
 println("Total:")
 for (k, v) in total_cost_table.full
-    print_mean_etc(v; title=k, scale=1000)
+    print_mean_etc(v; title=k, scale=10)
 end
 
 println("Lane:")
 for (k, v) in lane_cost_table.full
-    print_mean_etc(v; title=k, scale=1000)
+    print_mean_etc(v; title=k, scale=10)
 end
 
 println("Control:")
 for (k, v) in control_cost_table.full
-    print_mean_etc(v; title=k, scale=1000)
+    print_mean_etc(v; title=k, scale=10)
 end
 
 println("Velocity:")
 for (k, v) in velocity_cost_table.full
-    print_mean_etc(v; title=k, scale=1000)
+    print_mean_etc(v; title=k, scale=10)
 end
 
 #function print_mean_min_max(Δcost)
