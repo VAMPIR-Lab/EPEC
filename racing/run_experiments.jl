@@ -21,11 +21,11 @@ probs = setup(; T=10,
     lat_max=4.5 # just used for visulization rn 2024-04-10 (should be fixed)
 );
 
-is_x0s_from_file = false;
-is_results_from_file = false;
+is_x0s_from_file = true;
+#is_results_from_file = false;
 data_dir = "data"
-init_filename = "x0s_500samples_2024-01-31_1723";
-sample_size = 200;
+init_filename = "x0s_10samples_2024-04-17_1611";
+sample_size = 10;
 time_steps = 25;
 r_offset_max = 3.0; # maximum distance between P1 and P2
 a_long_vel_max = 3.0; # maximum longitudunal velocity for a

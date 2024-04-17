@@ -63,10 +63,13 @@ function f_ego_breakdown(T, X, U, X_opp, c, r; α1, α2, β)
         long_vel = x[3] * sin(x[4])
         long_vel_opp = x_opp[3] * sin(x_opp[4])
         p = x[1:2]
+        #road_center = (p - c) ./ ((p - c)' * (p - c)) * r[1]
+        #cost += α1 * (p[1] - road_center[1])^2 + α2 * u' * u + β * (long_vel_opp - long_vel)
 
         lane_cost_arr[t] = α1^2 * ((p - c)' * (p - c) - r[1]^2)^2
+        #lane_cost_arr[t] = α1 * (p[1] - road_center[1])^2
         control_cost_arr[t] = α2 * u' * u
-        velocity_cost_arr[t] = β * (long_vel_opp - 2 * long_vel)
+        velocity_cost_arr[t] = β * (long_vel_opp - long_vel)
     end
 
     lane_cost = sum(lane_cost_arr)

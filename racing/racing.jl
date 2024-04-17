@@ -45,8 +45,8 @@ function f_ego(T, X, U, X_opp, c, r; α1, α2, α3, β)
         p = x[1:2]
         #cost += α1 * x[1]^2 + α2 * u' * u + β * (long_vel_opp - 2 * long_vel)
         #road_center = (p - c) ./ ((p - c)' * (p - c)) * r[1]
-        #cost += α1 * (p[1] - road_center[1])^2 + α2 * u' * u + β * (long_vel_opp - 2 * long_vel)
-        cost += α1^2 * ((p - c)' * (p - c) - r[1]^2)^2 + α2 * u' * u + β * (long_vel_opp - 2 * long_vel)
+        #cost += α1 * (p[1] - road_center[1])^2 + α2 * u' * u + β * (long_vel_opp - long_vel)
+        cost += α1^2 * ((p - c)' * (p - c) - r[1]^2)^2 + α2 * u' * u + β * (long_vel_opp - long_vel)
     end
     cost
 end
@@ -162,10 +162,10 @@ function accel_bounds(X, X_opp, u_max_nominal, u_max_drafting, box_length, box_w
 
     u_max_1 = du * sigmoid.(d[:, 2] .+ box_length, 10.0, 0) .+ u_max_nominal
     u_max_2 = du * sigmoid.(-d[:, 2], 10.0, 0) .+ u_max_nominal
-    u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2 .* (-d[:, 2] ./ box_length), 10.0, 0) .+ u_max_nominal
-    u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2 .* (-d[:, 2] ./ box_length), 10.0, 0) .+ u_max_nominal
-    #u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
-    #u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
+    #u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2 .* (-d[:, 2] ./ box_length), 10.0, 0) .+ u_max_nominal
+    #u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2 .* (-d[:, 2] ./ box_length), 10.0, 0) .+ u_max_nominal
+    u_max_3 = du * sigmoid.(d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
+    u_max_4 = du * sigmoid.(-d[:, 1] .+ box_width / 2, 10.0, 0) .+ u_max_nominal
     (u_max_1, u_max_2, u_max_3, u_max_4)
 end
 

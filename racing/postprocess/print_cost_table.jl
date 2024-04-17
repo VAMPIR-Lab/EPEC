@@ -28,7 +28,8 @@ function process_steps(results, modes_sorted)
     full_steps_table["F", "S"] = steps_table_old[7, "b"]
     full_steps_table["F", "N"] = steps_table_old[8, "b"]
     full_steps_table["F", "L"] = steps_table_old[9, "b"]
-    full_steps_table["F", "F"] = steps_table_old[10, "a"]
+    #full_steps_table["F", "F"] = steps_table_old[10, "a"]
+    full_steps_table["F", "F"] = steps_table_old[9, "a"]
     #display(cost_table)
 
     compressed_table = Dict()
@@ -72,7 +73,8 @@ function process_costs(results, modes_sorted; property=:total)
     full_table["F", "S"] = cost_table_old[7, "b"]
     full_table["F", "N"] = cost_table_old[8, "b"]
     full_table["F", "L"] = cost_table_old[9, "b"]
-    full_table["F", "F"] = cost_table_old[10, "a"]
+    #full_table["F", "F"] = cost_table_old[10, "a"]
+    full_table["F", "F"] = cost_table_old[9, "a"]
     #display(cost_table)
 
     compressed_table = Dict()
