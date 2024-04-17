@@ -20,7 +20,7 @@ avgs_1, stderrs_1 = get_mean_running_cost(results, 1)
 avgs_3, stderrs_3 = get_mean_running_cost(results, 3)
 avgs_9, stderrs_9 = get_mean_running_cost(results, 9)
 avgs_6, stderrs_6 = get_mean_running_cost(results, 6)
-#avgs_10, stderrs_10 = get_mean_running_cost(results, 10)
+avgs_10, stderrs_10 = get_mean_running_cost(results, 10)
 
 #, yaxis=(formatter=y->string(round(Int, y / 10^-4)))
 #, yaxis=(formatter=y->round(y; sigdigits=4)
